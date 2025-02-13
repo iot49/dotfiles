@@ -1,0 +1,9 @@
+#! zsh
+
+cd ~/Dropbox/server/stacks/base-images/dev
+docker build . -t ttmetro/dev-base
+cd ../../admin
+docker compose build
+cd ../apps
+docker compose build
+

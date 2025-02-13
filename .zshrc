@@ -24,6 +24,8 @@ setopt INC_APPEND_HISTORY
 setopt HIST_IGNORE_DUPS
 setopt HIST_REDUCE_BLANKS
 
+PATH=~/.bin:$PATH
+
 # helper ... source if file exists
 function run_if() {
     [[ -f $1 ]] && . $1
