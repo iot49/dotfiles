@@ -24,9 +24,6 @@ setopt INC_APPEND_HISTORY
 setopt HIST_IGNORE_DUPS
 setopt HIST_REDUCE_BLANKS
 
-# direnv
-eval "$(direnv hook zsh)"
-
 # helper ... source if file exists
 function run_if() {
     [[ -f $1 ]] && . $1
@@ -35,6 +32,9 @@ function run_if() {
 # init packages
 run_if "$HOME/.local/bin/env"
 run_if "$HOME/.cargo/env"
+
+# direnv
+eval "$(direnv hook zsh)"
 
 # alias commands
 alias ll='ls -l'
