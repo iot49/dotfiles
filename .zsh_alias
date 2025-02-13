@@ -1,0 +1,13 @@
+alias ll='ls -l'
+alias la='ls -la'
+
+alias dc='docker compose'
+
+# login to the server (from local network in sf)
+alias server='ssh boser@server.local'
+
+if [[ `uname` = "Linux" ]]
+then
+    # let's assume we are running from a docker container on the server
+    alias server='ssh boser@host.docker.internal'
+fi

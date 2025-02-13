@@ -14,9 +14,6 @@ PROMPT='%F{blue}%2~ %f$ '
 export CLICOLOR=1
 export LSCOLORS=GxFxCxDxBxegedabagaced
 
-# load custom shell functions
-fpath+=~/.zsh_func
-
 # history
 HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
 SAVEHIST=5000
@@ -27,16 +24,24 @@ setopt INC_APPEND_HISTORY
 setopt HIST_IGNORE_DUPS
 setopt HIST_REDUCE_BLANKS
 
-. "$HOME/.cargo/env"
-. "$HOME/.local/bin/env"
+# direnv
+eval "$(direnv hook zsh)"
 
+# helper ... source if file exists
+function run_if() {
+    [[ -f $1 ]] && . $1
+}
+
+# init packages
+run_if "$HOME/.local/bin/env"
+run_if "$HOME/.cargo/env"
+
+# alias commands
 alias ll='ls -l'
 alias la='ls -la'
-
 alias dc='docker compose'
-
 alias server='ssh boser@server.local'
-alias server='ssh boser@host.docker.internal'
 
-# one of Darwin (mac), Linux (docker container)
-export MACHINE=`uname`
+# architecture specific customizations (e.g. .zshrc_Darwin, .zshrc_Linux)
+run_if "$HOME/.zshrc_`uname`"
+
