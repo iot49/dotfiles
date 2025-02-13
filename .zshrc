@@ -3,25 +3,16 @@ cdpath=($HOME/Dropbox $HOME/Dropbox/iot $HOME/Dropbox/server)
 setopt NO_CASE_GLOB   # case insensitive completion
 setopt AUTO_CD        # cd optional
 
-# prompt (the .venv prefix comes from elsewhere, presumably vs-code)
+# prompt
 autoload -Uz vcs_info
 precmd() { vcs_info }
 zstyle ':vcs_info:git:*' formats '%b '
 setopt PROMPT_SUBST
 PROMPT='%F{blue}%2~ %f$ '
-# use this to also show git branch
-# PROMPT='%F{red}${vcs_info_msg_0_} %F{blue}%2~ %f$ '
-
 
 # ls
 export CLICOLOR=1
 export LSCOLORS=GxFxCxDxBxegedabagaced
-alias ll='ls -l'
-alias la='ls -la'
-alias dc='docker compose'
-alias jb='jupyter-book'
-alias rclone='/Applications/rclone'
-alias rclone-gui='/Applications/rclone rcd --rc-web-gui'
 
 # load custom shell functions
 fpath+=~/.zsh_func
@@ -38,3 +29,14 @@ setopt HIST_REDUCE_BLANKS
 
 . "$HOME/.cargo/env"
 . "$HOME/.local/bin/env"
+
+alias ll='ls -l'
+alias la='ls -la'
+
+alias dc='docker compose'
+
+alias server='ssh boser@server.local'
+alias server='ssh boser@host.docker.internal'
+
+# one of Darwin (mac), Linux (docker container)
+export MACHINE=`uname`
