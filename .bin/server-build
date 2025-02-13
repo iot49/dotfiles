@@ -1,0 +1,14 @@
+#! zsh
+
+# build/update all docker containers for server
+
+if [[ `hostname` == "server.local" ]]; then
+    cd ~/Dropbox/server/stacks/base-images/dev
+    docker build . -t ttmetro/dev-base
+    cd ../../admin
+    docker compose build
+    cd ../apps
+    docker compose build
+else
+    echo "must be on server (mac mini) to run this command!"
+fi
