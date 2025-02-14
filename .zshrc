@@ -3,12 +3,19 @@ cdpath=($HOME/Dropbox $HOME/Dropbox/iot $HOME/Dropbox/server)
 setopt NO_CASE_GLOB   # case insensitive completion
 setopt AUTO_CD        # cd optional
 
+# hostname
+export HOSTNAME=`hostname`
+substring=".local"
+if [[ "$HOSTNAME" == *"$substring"* ]]; then
+  HOSTNAME=${HOSTNAME//$substring/}
+fi
+
 # prompt
 autoload -Uz vcs_info
 precmd() { vcs_info }
 zstyle ':vcs_info:git:*' formats '%b '
 setopt PROMPT_SUBST
-PROMPT='%F{blue}%2~ %f$ '
+PROMPT='%F{red}${HOSTNAME} %F{blue}%2~ %f$ '
 
 # ls
 export CLICOLOR=1
@@ -47,3 +54,6 @@ alias server='ssh boser@server.local'
 # architecture specific customizations (e.g. .zshrc_Darwin, .zshrc_Linux)
 run_if "$HOME/.zshrc_`uname`"
 
+
+
+echo "$HOSTNAME"
