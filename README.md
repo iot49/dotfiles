@@ -11,7 +11,7 @@
 cd ~
 git init
 git remote add origin https://github.com/iot49/dotfiles
-git pull origin main
+git pull --set-upstream origin main
 ```
 
 Use git as usual. Do not forget **-f** with `git add`!
