@@ -3,11 +3,11 @@
 # build/update all docker containers for server
 
 if [[ `hostname` == "server.local" ]]; then
-    cd ~/Dropbox/server/images/dev
-    docker build . -t ttmetro/dev
-    cd ~/Dropbox/server/stacks/admin
-    docker compose build
-    cd ~/Dropbox/server/stacks/apps
+    cd ~/Dropbox/server/images/dev && \
+    docker build . -t ttmetro/dev && \
+    cd ~/Dropbox/server/stacks/admin && \
+    docker compose build && \
+    cd ~/Dropbox/server/stacks/apps && \
     docker compose build
 else
     echo "must be on server (mac mini) to run this command!"
