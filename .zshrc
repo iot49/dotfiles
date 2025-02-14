@@ -53,7 +53,3 @@ alias server='ssh boser@server.local'
 
 # architecture specific customizations (e.g. .zshrc_Darwin, .zshrc_Linux)
 run_if "$HOME/.zshrc_`uname`"
-
-
-
-echo "$HOSTNAME"
