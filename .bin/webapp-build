@@ -1,0 +1,14 @@
+#! zsh
+
+# build/update all docker containers for server
+
+if [[ `hostname` == "server.local" ]]; then
+    cd ~/webapp/docker/images/dev && \
+    docker build . -t webapp/dev && \
+    cd ~/webapp/docker/stacks/admin && \
+    docker compose build && \
+    cd ~/webapp/docker/stacks/apps && \
+    docker compose build
+else
+    echo "must be on server (mac mini) to run this command!"
+fi

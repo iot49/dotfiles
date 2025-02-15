@@ -1,0 +1,11 @@
+#! zsh
+
+# restart apps stack
+
+if [[ `hostname` == "server.local" ]]; then
+    cd ~/webapp/docker/stacks/apps && \
+    docker compose down && \
+    docker compose up -d
+else
+    echo "must be on server (mac mini) to run this command!"
+fi
