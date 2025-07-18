@@ -1,5 +1,5 @@
 # cd path
-cdpath=($HOME/Dropbox $HOME/Dropbox/iot $HOME/Dropbox/server)
+cdpath=($HOME/Documents $HOME/Documents/iot $HOME/Documents/server)
 setopt NO_CASE_GLOB   # case insensitive completion
 setopt AUTO_CD        # cd optional
 
@@ -48,8 +48,11 @@ eval "$(direnv hook zsh)"
 # alias commands
 alias ll='ls -l'
 alias la='ls -la'
-alias dc='docker compose'
 alias server='ssh boser@server.local'
+
+# docker
+alias docker-compose='docker compose'
+alias dc='docker compose'
 
 # architecture specific customizations (e.g. .zshrc_Darwin, .zshrc_Linux)
 run_if "$HOME/.zshrc_`uname`"
