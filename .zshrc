@@ -50,9 +50,23 @@ alias ll='ls -l'
 alias la='ls -la'
 alias server='ssh boser@server.local'
 
+# cd
+alias iot='cd ~/Documents/personal/iot'
+alias blog49='cd ~/Documents/personal/iot/blog49'
+alias rails49='cd ~/Documents/personal/iot/rails49'
+alias blocks49='cd ~/Documents/personal/iot/blocks49'
+
 # docker
 alias docker-compose='docker compose'
 alias dc='docker compose'
 
 # architecture specific customizations (e.g. .zshrc_Darwin, .zshrc_Linux)
 run_if "$HOME/.zshrc_`uname`"
+
+# Added by LM Studio CLI (lms)
+export PATH="$PATH:/Users/boser/.lmstudio/bin"
+# End of LM Studio CLI section
+
+# Added by Antigravity
+export PATH="/Users/boser/.antigravity/antigravity/bin:$PATH"
+alias code='antigravity'

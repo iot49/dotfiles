@@ -1,3 +1,5 @@
 *
 .config/
 podman-machine-default.json
+
+!.gemini
