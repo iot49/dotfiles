@@ -1,2 +1,3 @@
 echo "initializations for macos"
 
+PROMPT='%F{red}M2 %F{blue}%2~ %f$ '
