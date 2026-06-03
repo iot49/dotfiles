@@ -16,6 +16,60 @@ This repository and home directory workspace are configured with separated repos
 
 ---
 
+## 🔄 Syncing & New Machine Installation
+
+> [!WARNING]
+> **iCloud & Sync Limitations:** The development folder `~/iot` is **not** synced via iCloud. GitHub must be used for syncing your code. Any files that are not pushed to GitHub must be backed up or synced manually.
+> 
+> **Credentials & Secrets:** Do **not** use secrets files (e.g., `.env`) for credentials. Use **1Password** for managing and storing credentials securely.
+
+### Syncing Dotfiles
+Since the home directory `~` is the Git repository itself, syncing is done directly via git commands run in `~`:
+
+1. **Pushing updates from current machine**:
+   ```bash
+   # Add any new dotfiles (since '*' ignores everything by default, use -f to force)
+   git add -f ~/.new_dotfile
+   
+   # Commit and push
+   git commit -am "Update dotfiles"
+   git push origin main
+   ```
+2. **Pulling updates on another machine**:
+   ```bash
+   cd ~
+   git pull
+   ```
+
+### Installing on a New Machine
+To set up this environment on a fresh machine, follow these steps:
+
+1. **Initialize Git and add remote**:
+   ```bash
+   cd ~
+   git init
+   git remote add origin https://github.com/iot49/dotfiles.git
+   git fetch
+   ```
+2. **Back up existing conflicting files**:
+   Any standard files (like `.zshrc` or `.gitignore`) that already exist on the new machine will conflict with the checkout. Back them up:
+   ```bash
+   mkdir -p ~/dotfiles_backup
+   # Move conflicting files to the backup directory
+   ```
+3. **Checkout the repository**:
+   ```bash
+   git checkout main
+   ```
+4. **Initialize Toolchains & Links**:
+   - Ensure `uv` is installed.
+   - Run the Python setup script to create python/pip links:
+     ```bash
+     ~/.bin/setup-python-links
+     ```
+
+---
+
 ## 🐍 Python Management & direnv (macOS Insulation)
 
 - Python versions are managed dynamically using **`uv`** to insulate development environments from macOS system Python updates.
