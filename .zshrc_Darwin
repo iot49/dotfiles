@@ -1,3 +1,9 @@
 echo "initializations for macos"
 
-PROMPT='%F{red}M2 %F{blue}%2~ %f$ '
+if [[ "$(uname -m)" == "arm64" ]]; then
+  PROMPT_HOST="M2"
+else
+  PROMPT_HOST="I7"
+fi
+
+PROMPT="%F{red}${PROMPT_HOST} %F{blue}%2~ %f$ "

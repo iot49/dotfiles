@@ -80,7 +80,7 @@ export PATH="$PATH:$HOME/.lmstudio/bin"
 
 # Added by Antigravity IDE
 export PATH="$HOME/.antigravity-ide/antigravity-ide/bin:$PATH"
-alias code='antigravity'
+alias code='antigravity-ide'
 
 # java (openjdk installed with brew)
 # For the system Java wrappers to find this JDK, symlink it with
