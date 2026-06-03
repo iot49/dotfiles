@@ -1,5 +1,5 @@
+.git-credentials
 *
-.config/
-podman-machine-default.json
 
 !.gemini
+!.gemini/**

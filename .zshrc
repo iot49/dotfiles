@@ -10,7 +10,7 @@ if [[ "$HOSTNAME" == *"$substring"* ]]; then
   HOSTNAME=${HOSTNAME//$substring/}
 fi
 
-# prompt
+# prompt (may be overridden by architecture-specific customization below)
 autoload -Uz vcs_info
 precmd() { vcs_info }
 zstyle ':vcs_info:git:*' formats '%b '
@@ -23,13 +23,15 @@ export LSCOLORS=GxFxCxDxBxegedabagaced
 
 # history
 HISTFILE=${ZDOTDIR:-$HOME}/.zsh_history
-SAVEHIST=5000
-HISTSIZE=2000
+SAVEHIST=10000
+HISTSIZE=10000
 setopt SHARE_HISTORY
 setopt APPEND_HISTORY
 setopt INC_APPEND_HISTORY
-setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_ALL_DUPS
 setopt HIST_REDUCE_BLANKS
+setopt HIST_FIND_NO_DUPS
+setopt HIST_EXPIRE_DUPS_FIRST
 
 # Local bin path
 export PATH="$HOME/.local/bin:$HOME/.bin:$PATH"
@@ -41,10 +43,6 @@ function run_if() {
 
 # init packages
 run_if "$HOME/.local/bin/env"
-run_if "$HOME/.cargo/env"
-
-# rust
-export PATH="$HOME/.cargo/bin:$PATH"
 
 # pyenv (disabled in favor of uv-managed Python)
 # export PYENV_ROOT="$HOME/.pyenv"
@@ -55,9 +53,7 @@ export PATH="$HOME/.cargo/bin:$PATH"
 eval "$(direnv hook zsh)"
 
 # alias commands
-alias ll='ls -l'
-alias la='ls -la'
-alias server='ssh boser@server.local'
+run_if "$HOME/.zsh_alias"
 
 # cd aliases
 alias iot='cd ~/iot'
@@ -65,12 +61,8 @@ alias blog49='cd ~/iot/blog49'
 alias rails49='cd ~/iot/rails49'
 alias blocks49='cd ~/iot/blocks49'
 
-# docker
-alias docker-compose='docker compose'
-alias dc='docker compose'
-
 # Git Separation Ceiling
-export GIT_CEILING_DIRECTORIES="/Users/ttmetro"
+export GIT_CEILING_DIRECTORIES="$HOME"
 
 # architecture specific customizations (e.g. .zshrc_Darwin, .zshrc_Linux)
 run_if "$HOME/.zshrc_`uname`"

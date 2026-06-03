@@ -1,5 +1,3 @@
-echo "initializations for macos"
-
 if [[ "$(uname -m)" == "arm64" ]]; then
   PROMPT_HOST="M2"
 else

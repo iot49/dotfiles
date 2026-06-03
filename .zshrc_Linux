@@ -1,4 +1,6 @@
-echo "custom init for Linux"
-
 # let's assume we are running from a docker container on the server
 alias server='ssh boser@host.docker.internal'
+
+# Set a clean prompt on Linux
+PROMPT_HOST="Linux"
+PROMPT="%F{red}${PROMPT_HOST} %F{blue}%2~ %f$ "
