@@ -1,5 +1,5 @@
 # cd path
-cdpath=($HOME/Documents $HOME/Documents/iot $HOME/Documents/server)
+cdpath=($HOME $HOME/iot $HOME/Documents $HOME/Dropbox)
 setopt NO_CASE_GLOB   # case insensitive completion
 setopt AUTO_CD        # cd optional
 
@@ -31,7 +31,8 @@ setopt INC_APPEND_HISTORY
 setopt HIST_IGNORE_DUPS
 setopt HIST_REDUCE_BLANKS
 
-PATH=~/.bin:$PATH
+# Local bin path
+export PATH="$HOME/.local/bin:$HOME/.bin:$PATH"
 
 # helper ... source if file exists
 function run_if() {
@@ -42,6 +43,14 @@ function run_if() {
 run_if "$HOME/.local/bin/env"
 run_if "$HOME/.cargo/env"
 
+# rust
+export PATH="$HOME/.cargo/bin:$PATH"
+
+# pyenv (disabled in favor of uv-managed Python)
+# export PYENV_ROOT="$HOME/.pyenv"
+# command -v pyenv >/dev/null || export PATH="$PYENV_ROOT/bin:$PATH"
+# eval "$(pyenv init -)"
+
 # direnv
 eval "$(direnv hook zsh)"
 
@@ -50,24 +59,27 @@ alias ll='ls -l'
 alias la='ls -la'
 alias server='ssh boser@server.local'
 
-# cd
-alias iot='cd ~/Documents/personal/iot'
-alias blog49='cd ~/Documents/personal/iot/blog49'
-alias rails49='cd ~/Documents/personal/iot/rails49'
-alias blocks49='cd ~/Documents/personal/iot/blocks49'
+# cd aliases
+alias iot='cd ~/iot'
+alias blog49='cd ~/iot/blog49'
+alias rails49='cd ~/iot/rails49'
+alias blocks49='cd ~/iot/blocks49'
 
 # docker
 alias docker-compose='docker compose'
 alias dc='docker compose'
 
+# Git Separation Ceiling
+export GIT_CEILING_DIRECTORIES="/Users/ttmetro"
+
 # architecture specific customizations (e.g. .zshrc_Darwin, .zshrc_Linux)
 run_if "$HOME/.zshrc_`uname`"
 
 # Added by LM Studio CLI (lms)
-export PATH="$PATH:/Users/boser/.lmstudio/bin"
+export PATH="$PATH:$HOME/.lmstudio/bin"
 
-# Added by Antigravity
-export PATH="/Users/boser/.antigravity/antigravity/bin:$PATH"
+# Added by Antigravity IDE
+export PATH="$HOME/.antigravity-ide/antigravity-ide/bin:$PATH"
 alias code='antigravity'
 
 # java (openjdk installed with brew)
