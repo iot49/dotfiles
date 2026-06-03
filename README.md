@@ -28,7 +28,5 @@ This repository and home directory workspace are configured with separated repos
 ## 💬 Consolidated AI Guidelines
 
 AI coding assistants (like Antigravity and Claude Code) use a tiered instructions hierarchy to avoid duplication:
-1. **Global Guidelines:** General agent developer instructions, code standards (Lit Element, 2-space indent, `uv run`), planning templates, and surgical execution rules are defined centrally in [GLOBAL_GUIDELINES.md](file:///Users/ttmetro/GLOBAL_GUIDELINES.md).
-2. **Project-Specific Rules:** Sub-repositories contain minimal instructions pointing to the global guidelines, keeping only project-specific rules locally:
-   - [track-occupancy/GEMINI.md](file:///Users/ttmetro/iot/track-occupancy/GEMINI.md): Specifies monorepo guardrails (TypeScript parser vs Python runtime isolation).
-   - [py-rocrail/CLAUDE.md](file:///Users/ttmetro/iot/py-rocrail/CLAUDE.md): Specifies PyRocrail architecture, commands (Ruff, Black, Pyright), and testing instructions.
+1. **Global Guidelines:** General agent developer instructions, code standards (Lit Element, 2-space indent, `uv run`), planning templates, and surgical execution rules are defined centrally in [GLOBAL_GUIDELINES.md](GLOBAL_GUIDELINES.md).
+2. **Project-Specific Rules:** Sub-repositories contain minimal instructions pointing to the global guidelines, keeping only project-specific rules locally.

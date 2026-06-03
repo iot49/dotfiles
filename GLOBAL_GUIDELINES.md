@@ -65,6 +65,7 @@ Your proposed plan must use this layout:
 ## 🐍 Python Guidelines
 - Use `uv` to manage Python versions and environments.
 - Run Python scripts and CLI tools using `uv run`.
+- Use **Ruff**, **Black**, and **Pyright** for linting, formatting, and type-checking across all Python code (including Jupyter Notebooks where applicable).
 
 ---
 
