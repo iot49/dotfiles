@@ -1,1 +1,0 @@
-{"binaries":["cargo-embed","cargo-flash","probe-rs"],"install_prefix":"/Users/boser/.cargo/bin","provider":{"source":"cargo-dist","version":"0.13.0"},"source":{"app_name":"probe-rs-tools","name":"probe-rs","owner":"probe-rs","release_type":"github"},"version":"0.24.0"}
