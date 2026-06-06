@@ -80,4 +80,3 @@ Your proposed plan must use this layout:
 
 ## 🐋 Docker & Deployment Guidelines
 - Let the user run `deploy.sh`. Do not execute deployment commands automatically unless requested.
-- Note that the Docker application runs remotely on `ssh blocks`, not locally.
