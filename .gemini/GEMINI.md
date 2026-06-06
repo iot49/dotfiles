@@ -37,8 +37,8 @@ Your proposed plan must use this layout:
 - [Verify boundaries, patterns, and style conventions]
 
 ### 📂 Proposed File Changes
-- **Modify:** [file_basename](file:///path/to/file) - [brief description]
-- **Create [NEW]:** [file_basename](file:///path/to/file) - [brief description]
+- **Modify:** [file_basename](path/to/file) - [brief description]
+- **Create [NEW]:** [file_basename](path/to/file) - [brief description]
 
 ### 🔬 Verification & Testing Plan
 - **Automated Check:** [Command to run, e.g. tests or build]
@@ -75,8 +75,3 @@ Your proposed plan must use this layout:
   - Keep components small and focused; break them into individual components if functionality gets complex.
   - Create tests for all components.
 - **Formatting Rules:** Never use inline CSS styles in HTML. Prefer 2-space indentation.
-
----
-
-## 🐋 Docker & Deployment Guidelines
-- Let the user run `deploy.sh`. Do not execute deployment commands automatically unless requested.
