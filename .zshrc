@@ -79,3 +79,10 @@ alias code='antigravity-ide'
 #   sudo ln -sfn /opt/homebrew/opt/openjdk/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk.jdk
 export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"
 export CPPFLAGS="-I/opt/homebrew/opt/openjdk/include"
+# pnpm
+export PNPM_HOME="/Users/ttmetro/Library/pnpm"
+case ":$PATH:" in
+  *":$PNPM_HOME:"*) ;;
+  *) export PATH="$PNPM_HOME:$PATH" ;;
+esac
+# pnpm end
