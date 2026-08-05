@@ -13,6 +13,12 @@
 
 set -u
 
+# macOS only: LaunchServices/duti do not exist elsewhere.
+if [ "$(uname)" != Darwin ]; then
+  echo "skipping: macOS only" >&2
+  exit 0
+fi
+
 APP="com.microsoft.VSCode"
 
 EXTS=(

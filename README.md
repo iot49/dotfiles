@@ -92,6 +92,20 @@ To set up this environment on a fresh machine, follow these steps:
 
 ## 💬 Consolidated AI Guidelines
 
-AI coding assistants (like Antigravity and Claude Code) use a tiered instructions hierarchy to avoid duplication:
-1. **Global Guidelines:** General agent developer instructions, code standards (Lit Element, 2-space indent, `uv run`), planning templates, and surgical execution rules are defined centrally in [GLOBAL_GUIDELINES.md](GLOBAL_GUIDELINES.md).
-2. **Project-Specific Rules:** Sub-repositories contain minimal instructions pointing to the global guidelines, keeping only project-specific rules locally.
+AI coding assistants use a tiered instructions hierarchy to avoid duplication:
+1. **Gemini:** Full guidelines — planning templates, surgical execution rules, code standards — in [.gemini/GEMINI.md](.gemini/GEMINI.md).
+2. **Claude Code:** [.claude/CLAUDE.md](.claude/CLAUDE.md), deliberately short since it is read on every session. Stack conventions and working style only; Claude Code handles planning natively, so the plan scaffolding in `GEMINI.md` is not repeated there.
+3. **Claude Code settings:** [.claude/settings.json](.claude/settings.json) — permissions, sandbox, model, enabled plugins. Plugins reinstall themselves from the `enabledPlugins`/`extraKnownMarketplaces` entries, so `~/.claude/plugins/` is not tracked.
+4. **Project-Specific Rules:** Sub-repositories contain minimal instructions pointing to the global guidelines, keeping only project-specific rules locally.
+
+> [!NOTE]
+> Session state under `~/.claude` (`projects/`, `sessions/`, `history.jsonl`, `file-history/`, caches) is intentionally **not** tracked: it is machine-local and contains conversation transcripts. `~/.claude/.claude.json` is excluded too — it holds a per-machine `machineID`/`userID`.
+
+---
+
+## 🖥️ Editor & Applications
+
+- **VS Code** is the default editor and the default handler for code/text file types.
+  - User settings live at `~/.config/Code/User/` (Linux-native path, tracked here). On macOS, `~/Library/Application Support/Code/User/{settings,keybindings}.json` are symlinks into it.
+  - File associations are set by `~/.bin/set-vscode-file-associations.sh` (macOS only; requires `duti`). Re-run after macOS or VS Code upgrades.
+- **Brewfile:** Homebrew formulae, casks, VS Code extensions, and cargo/npm globals are captured in [Brewfile](Brewfile). Restore on a new Mac with `brew bundle install`; refresh with `brew bundle dump --force`.
