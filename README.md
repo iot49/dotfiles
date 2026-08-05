@@ -205,6 +205,26 @@ backup-iot --dest DIR    # somewhere else, e.g. an external disk
 
 `meta/repos.tsv` records every repo, its remote, and its HEAD, so a restore knows what to clone; uncommitted edits to tracked files are saved as `meta/<repo>.patch`. A repo with unpushed commits is reported as a warning — those belong on GitHub, not in a file backup.
 
+### Nightly automation (launchd)
+
+A LaunchAgent runs the backup at **02:30 daily**. `launchd` rather than `cron` because a missed run (laptop asleep at 02:30 — the normal case) fires once on the next wake instead of being skipped silently.
+
+The plist lives at [.config/launchd/org.iot49.backup-iot.plist](.config/launchd/org.iot49.backup-iot.plist), symlinked into `~/Library/LaunchAgents/`. It invokes the script via `/bin/sh -c` so `$HOME` expands at runtime and the file is not tied to one username.
+
+```bash
+# install (once per machine)
+ln -sfn ~/.config/launchd/org.iot49.backup-iot.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/org.iot49.backup-iot.plist
+
+launchctl print    gui/$UID/org.iot49.backup-iot     # status, last exit code
+launchctl kickstart -p gui/$UID/org.iot49.backup-iot # run now
+launchctl bootout  gui/$UID/org.iot49.backup-iot     # disable
+```
+
+Output appends to `~/Library/Logs/backup-iot.log` (about six lines per run — no rotation needed). The job runs at `Nice 5` with low-priority I/O so it stays out of the way, and `RunAtLoad` is **false**: installing the agent never triggers a sync, so the first ~1.3 GB upload is always a deliberate act.
+
+Nightly is cheap because rsync is incremental — a typical night re-uploads nothing, since the bulk (model weights, training images) changes rarely. The fixed cost is the ~20 s scan.
+
 > [!NOTE]
 > **`~/Documents` is not iCloud-synced on this Mac** (Desktop & Documents sync is off), so backups go to `~/Library/Mobile Documents/com~apple~CloudDocs/` directly. If you enable Desktop & Documents sync later, `~/Documents` becomes a redirect into that same iCloud container.
 

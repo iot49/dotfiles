@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Nightly backup of the non-GitHub parts of ~/iot into iCloud Drive.
+  Canonical copy lives in the dotfiles repo; ~/Library/LaunchAgents holds a
+  symlink to it. See README "Backing Up ~/iot".
+
+  Install:  launchctl bootstrap gui/$UID ~/Library/LaunchAgents/org.iot49.backup-iot.plist
+  Remove:   launchctl bootout   gui/$UID/org.iot49.backup-iot
+  Run now:  launchctl kickstart -p gui/$UID/org.iot49.backup-iot
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>org.iot49.backup-iot</string>
+
+    <!-- /bin/sh expands $HOME, so this plist is not tied to one username. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string>exec "$HOME/.bin/backup-iot" >> "$HOME/Library/Logs/backup-iot.log" 2>&amp;1</string>
+    </array>
+
+    <!-- 02:30 daily. If the Mac is asleep, launchd runs it once on wake. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <!-- Never fire on load/login: the first sync is ~1.3 GB and should be a
+         deliberate act, not a side effect of installing the agent. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- Stay out of the way of interactive work. -->
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>5</integer>
+</dict>
+</plist>
