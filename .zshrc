@@ -70,10 +70,6 @@ run_if "$HOME/.zshrc_`uname`"
 # Added by LM Studio CLI (lms)
 export PATH="$PATH:$HOME/.lmstudio/bin"
 
-# Added by Antigravity IDE
-export PATH="$HOME/.antigravity-ide/antigravity-ide/bin:$PATH"
-alias code='antigravity-ide'
-
 # java (openjdk installed with brew)
 # For the system Java wrappers to find this JDK, symlink it with
 #   sudo ln -sfn /opt/homebrew/opt/openjdk/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk.jdk
