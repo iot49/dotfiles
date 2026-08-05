@@ -62,6 +62,12 @@ Your proposed plan must use this layout:
 
 ---
 
+## Errors
+
+After fixing errors, add a test to the CI pipeline to verify function and prevent re-occurence.
+
+---
+
 ## 🐍 Python Guidelines
 - Use `uv` to manage Python versions and environments.
 - Run Python scripts and CLI tools using `uv run`.
