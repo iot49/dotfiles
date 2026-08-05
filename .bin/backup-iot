@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+#
+# backup-iot — copy the parts of ~/iot that are NOT on GitHub into iCloud Drive.
+#
+# What gets backed up, derived automatically from git so it stays correct as
+# projects change:
+#   1. untracked files       (git ls-files --others)
+#   2. git-ignored files     (model weights, datasets, .envrc, local config)
+#   3. files under ~/iot that live outside any repo
+#   4. a patch of uncommitted edits to tracked files
+#   5. a manifest of every repo + remote + HEAD, so a restore knows what to clone
+# minus everything in the "regenerable" denylist below (node_modules, .venv,
+# build output, caches) — those come back from a lockfile, not from a backup.
+#
+# Tracked-and-pushed source is deliberately NOT copied: GitHub already has it.
+#
+# Sync-conflict strategy: every machine writes to its OWN folder, keyed by
+# machine name. Two machines never write the same path, so iCloud never has to
+# merge anything. Restores are manual reads — nothing is ever synced back down
+# into ~/iot automatically.
+#
+# Usage:
+#   backup-iot [--dry-run] [--force] [--dest DIR]
+
+set -uo pipefail
+
+SRC="$HOME/iot"
+ICLOUD="$HOME/Library/Mobile Documents/com~apple~CloudDocs"
+DEST_ROOT="$ICLOUD/Backup"
+MAX_MB=4000                       # refuse runaway payloads unless --force
+
+DRY=0; FORCE=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) DRY=1 ;;
+    --force)   FORCE=1 ;;
+    --dest)    shift; DEST_ROOT="$1" ;;
+    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+# --- machine name: the per-machine folder that prevents sync conflicts -------
+MACHINE="$(scutil --get ComputerName 2>/dev/null || true)"
+[ -z "$MACHINE" ] || [ "$MACHINE" = "Unknown" ] && MACHINE="$(hostname -s)"
+# sanitise: keep it filesystem- and sync-friendly
+MACHINE="$(printf '%s' "$MACHINE" | tr ' /' '--' | tr -cd '[:alnum:]._-')"
+[ -n "$MACHINE" ] || { echo "cannot determine machine name" >&2; exit 1; }
+
+DEST="$DEST_ROOT/$MACHINE"
+
+[ -d "$SRC" ]    || { echo "no $SRC" >&2; exit 1; }
+[ -d "$ICLOUD" ] || { echo "iCloud Drive not found at $ICLOUD" >&2; exit 1; }
+
+# --- single-run lock ---------------------------------------------------------
+LOCK="${TMPDIR:-/tmp}/.backup-iot.$USER.lock"
+if [ -d "$LOCK" ]; then
+  echo "another backup-iot is running (lock: $LOCK)" >&2; exit 1
+elif ! mkdir "$LOCK" 2>/dev/null; then
+  echo "cannot create lock at $LOCK (permissions?)" >&2; exit 1
+fi
+trap 'rm -rf "$LOCK" "${LIST:-}" "${FILT:-}"' EXIT
+
+# --- regenerable: never back these up ---------------------------------------
+REGEN='(^|/)(node_modules|\.venv|venv|\.pnpm-store|dist|build|\.astro|__pycache__|\.direnv|\.pytest_cache|\.ruff_cache|\.mypy_cache|\.ipynb_checkpoints|\.turbo|\.next|\.tox|\.cache|\.gradle|target|coverage|\.egg-info|\.antigravitycli)(/|$)|(^|/)\.DS_Store$|\.pyc$|(^|/)\.git(/|$)'
+
+LIST="$(mktemp -t backup-iot-list)" || { echo "cannot create temp file" >&2; exit 1; }
+FILT="$(mktemp -t backup-iot-filt)" || { echo "cannot create temp file" >&2; exit 1; }
+
+echo "==> scanning $SRC"
+cd "$SRC" || exit 1
+
+# 1+2: untracked and ignored files inside each repo -- ls-files emits FILES,
+# not directories, so a wholly-ignored dir cannot smuggle .venv back in.
+for d in */; do
+  d="${d%/}"
+  [ -d "$d/.git" ] || continue
+  {
+    git -C "$d" ls-files --others --exclude-standard
+    git -C "$d" ls-files --others --ignored --exclude-standard
+  } 2>/dev/null | sed "s|^|$d/|"
+done | sort -u >> "$LIST"
+
+# 3: files under ~/iot that belong to no repo at all
+find . -maxdepth 1 -type f 2>/dev/null | sed 's|^\./||' >> "$LIST"
+for d in */; do
+  d="${d%/}"
+  [ -d "$d/.git" ] && continue
+  find "$d" -type f 2>/dev/null >> "$LIST"
+done
+
+grep -Ev "$REGEN" "$LIST" | sort -u > "$FILT"
+
+# Nested repos: a repo cloned inside another repo's ignored/untracked space is
+# reported as one directory entry. If it has a remote and nothing local is at
+# risk, it is already on GitHub -- skip it. If it is dirty or unpushed, keep it
+# and say so, because then it holds work that exists nowhere else.
+while IFS= read -r nested; do
+  nd="${nested%/.git}"
+  remote=$(git -C "$nd" remote get-url origin 2>/dev/null || echo "")
+  dirty=$(git -C "$nd" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  unpushed=$(git -C "$nd" log --oneline '@{u}..' 2>/dev/null | wc -l | tr -d ' ')
+  if [ -n "$remote" ] && [ "$dirty" = "0" ] && [ "$unpushed" = "0" ]; then
+    echo "    skipping nested repo (clean, on GitHub): $nd"
+    grep -v "^$nd\(/\|$\)" "$FILT" > "$FILT.tmp" && mv "$FILT.tmp" "$FILT"
+  else
+    echo "    KEEPING nested repo (dirty=$dirty unpushed=$unpushed): $nd"
+  fi
+# mindepth 3: ./repo/.git is a top-level repo (depth 2) whose ignored files are
+# exactly what we are here to save. Only ./repo/sub/.git and deeper is nested.
+done < <(find . -mindepth 3 -name .git -type d ! -path '*/node_modules/*' ! -path '*/.venv/*' 2>/dev/null | sed 's|^\./||')
+
+COUNT=$(wc -l < "$FILT" | tr -d ' ')
+
+BYTES=$(tr '\n' '\0' < "$FILT" | xargs -0 stat -f %z 2>/dev/null | awk '{s+=$1} END {print s+0}')
+MB=$(( BYTES / 1048576 ))
+echo "    $COUNT files, ${MB} MB"
+
+if [ "$MB" -gt "$MAX_MB" ] && [ "$FORCE" -eq 0 ]; then
+  echo "REFUSING: ${MB} MB exceeds ${MAX_MB} MB guard." >&2
+  echo "Check for a new large directory that belongs in the denylist," >&2
+  echo "or re-run with --force if the growth is intentional." >&2
+  exit 1
+fi
+
+if [ "$DRY" -eq 1 ]; then
+  echo "==> dry run; would sync to: $DEST/iot"
+  echo "==> 20 largest files:"
+  tr '\n' '\0' < "$FILT" | xargs -0 du -h 2>/dev/null | sort -h | tail -20
+  exit 0
+fi
+
+mkdir -p "$DEST/iot" "$DEST/meta"
+
+echo "==> syncing to $DEST/iot"
+# --delete keeps the mirror honest; it is scoped to this machine's own folder,
+# so it can never remove another machine's backup.
+# --exclude '.git/' guards against recursing into a nested repo's history if one
+# is kept above; the working files are what matter, the history is on GitHub.
+rsync -a --delete --exclude '.git/' --files-from="$FILT" \
+      "$SRC/" "$DEST/iot/" || { echo "rsync failed" >&2; exit 1; }
+
+# 4+5: repo manifest and uncommitted-work patches
+echo "==> writing manifest and patches"
+rm -f "$DEST/meta"/*.patch
+MANIFEST="$DEST/meta/repos.tsv"
+{
+  printf 'repo\tremote\thead\tdirty_files\tunpushed_commits\n'
+  for d in */; do
+    d="${d%/}"; [ -d "$d/.git" ] || continue
+    remote=$(git -C "$d" remote get-url origin 2>/dev/null || echo -)
+    head=$(git -C "$d" rev-parse --short HEAD 2>/dev/null || echo -)
+    dirty=$(git -C "$d" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    unpushed=$(git -C "$d" log --oneline '@{u}..' 2>/dev/null | wc -l | tr -d ' ')
+    printf '%s\t%s\t%s\t%s\t%s\n' "$d" "$remote" "$head" "$dirty" "$unpushed"
+    # capture in-flight edits to tracked files; cheap insurance, tiny files
+    # Only modified tracked files produce a diff; untracked ones are already
+    # in the file list above, so an empty patch means nothing was at risk.
+    if [ "$dirty" != "0" ]; then
+      git -C "$d" diff HEAD > "$DEST/meta/$d.patch" 2>/dev/null
+      [ -s "$DEST/meta/$d.patch" ] || rm -f "$DEST/meta/$d.patch"
+    fi
+  done
+} > "$MANIFEST"
+
+date '+%Y-%m-%d %H:%M:%S %Z' > "$DEST/meta/last-backup.txt"
+printf '%s files, %s MB\n' "$COUNT" "$MB" >> "$DEST/meta/last-backup.txt"
+
+echo "==> done: $COUNT files, ${MB} MB -> $DEST"
+grep -v '^repo	' "$MANIFEST" | awk -F'\t' '$5 != "0" {print "    WARNING: " $1 " has " $5 " unpushed commit(s) -- push to GitHub"}'

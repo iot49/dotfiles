@@ -161,6 +161,60 @@ AI coding assistants use a tiered instructions hierarchy to avoid duplication:
 
 ---
 
+## 💾 Backing Up `~/iot` (files not on GitHub)
+
+`~/iot` is 8.2 GB, but almost all of it is either already on GitHub or trivially regenerable. Only **~1.3 GB** exists nowhere else. `~/.bin/backup-iot` copies exactly that slice into iCloud Drive.
+
+### What is and isn't backed up
+
+| Tier | Examples | Backed up? |
+|---|---|---|
+| On GitHub | all 11 repos' tracked source | **No** — GitHub is the backup |
+| Regenerable | `node_modules`, `.venv`, `.pnpm-store`, `dist/`, `.astro/`, `__pycache__` (~6.9 GB) | **No** — restore from lockfiles |
+| Irreplaceable | ML weights (`*.pth`, `*.onnx`, `*.ort`), `yolo/raw/` training images, `.envrc`, local config, loose files, uncommitted edits | **Yes** (~1.3 GB) |
+
+The include-set is derived from git on every run (`ls-files --others [--ignored]`), so a new ignored data directory is picked up automatically — there is no hand-maintained list to fall out of date.
+
+### Avoiding sync conflicts
+
+Each machine writes only to its own folder, named after the machine:
+
+```
+~/Library/Mobile Documents/com~apple~CloudDocs/Backup/
+├── Bernhards-2017-MacBook-i7/
+│   ├── iot/          # the files themselves
+│   └── meta/         # repos.tsv, *.patch, last-backup.txt
+└── <other-machine>/
+```
+
+This is what makes it conflict-proof: iCloud only creates conflict copies when two machines write the *same path*, and by construction they never do. Three rules keep that property:
+
+1. **Never** point two machines at the same folder, and never symlink between them.
+2. The backup is **push-only**. Restores are a deliberate manual copy; nothing syncs back into `~/iot` on its own.
+3. `rsync --delete` is scoped inside the machine's own folder, so it cannot touch another machine's data.
+
+A lockfile prevents two concurrent runs on one machine, and a 4 GB size guard aborts the run if the payload suddenly balloons (usually a new build directory that belongs in the denylist) — override with `--force` when the growth is real.
+
+### Usage
+
+```bash
+backup-iot --dry-run     # show what would be copied, largest files first
+backup-iot               # sync (~70 s cold, ~20 s incremental)
+backup-iot --dest DIR    # somewhere else, e.g. an external disk
+```
+
+`meta/repos.tsv` records every repo, its remote, and its HEAD, so a restore knows what to clone; uncommitted edits to tracked files are saved as `meta/<repo>.patch`. A repo with unpushed commits is reported as a warning — those belong on GitHub, not in a file backup.
+
+> [!NOTE]
+> **`~/Documents` is not iCloud-synced on this Mac** (Desktop & Documents sync is off), so backups go to `~/Library/Mobile Documents/com~apple~CloudDocs/` directly. If you enable Desktop & Documents sync later, `~/Documents` becomes a redirect into that same iCloud container.
+
+> [!WARNING]
+> **Check the iCloud plan before the first run** — 1.3 GB per machine does not fit the free 5 GB tier alongside everything else. If "Optimize Mac Storage" evicts backup files locally they still exist in iCloud; `brctl download <path>` pulls them back.
+>
+> The ~800 MB of model weights are training *outputs*. Consider Hugging Face or GitHub Releases for those instead — versioned, shareable, and it would cut the backup to ~500 MB.
+
+---
+
 ## 🖥️ Editor & Applications
 
 - **VS Code** is the default editor and the default handler for code/text file types.
