@@ -171,7 +171,10 @@ AI coding assistants use a tiered instructions hierarchy to avoid duplication:
 |---|---|---|
 | On GitHub | all 11 repos' tracked source | **No** — GitHub is the backup |
 | Regenerable | `node_modules`, `.venv`, `.pnpm-store`, `dist/`, `.astro/`, `__pycache__` (~6.9 GB) | **No** — restore from lockfiles |
-| Irreplaceable | ML weights (`*.pth`, `*.onnx`, `*.ort`), `yolo/raw/` training images, `.envrc`, local config, loose files, uncommitted edits | **Yes** (~1.3 GB) |
+| Irreplaceable | ML weights (`*.pth`, `*.onnx`, `*.ort`), `yolo/raw/` training images, `.envrc`, local config, loose files | **Yes** (~1.3 GB) |
+| Uncommitted edits to *tracked* files | e.g. a modified `fixtures/*.r49` | **Yes** — the file itself, not just a patch |
+
+That last row matters more than it looks: `git diff` records a changed binary as nothing but `Binary files differ`, so a patch alone would silently lose the edit. The modified file is copied verbatim; the patch is kept alongside as human-readable context.
 
 The include-set is derived from git on every run (`ls-files --others [--ignored]`), so a new ignored data directory is picked up automatically — there is no hand-maintained list to fall out of date.
 

@@ -79,6 +79,10 @@ for d in */; do
   {
     git -C "$d" ls-files --others --exclude-standard
     git -C "$d" ls-files --others --ignored --exclude-standard
+    # Modified tracked files: HEAD is on GitHub but these edits are not, and a
+    # patch cannot carry them when the file is binary (git records only
+    # "Binary files differ"). Copy the file itself -- it is authoritative.
+    git -C "$d" diff --name-only HEAD
   } 2>/dev/null | sed "s|^|$d/|"
 done | sort -u >> "$LIST"
 
@@ -90,7 +94,11 @@ for d in */; do
   find "$d" -type f 2>/dev/null >> "$LIST"
 done
 
-grep -Ev "$REGEN" "$LIST" | sort -u > "$FILT"
+# Drop the denylist, then anything that no longer exists: `git diff --name-only`
+# also reports deletions, and rsync --files-from errors on a missing entry.
+grep -Ev "$REGEN" "$LIST" | sort -u | while IFS= read -r p; do
+  [ -e "$p" ] && printf '%s\n' "$p"
+done > "$FILT"
 
 # Nested repos: a repo cloned inside another repo's ignored/untracked space is
 # reported as one directory entry. If it has a remote and nothing local is at
@@ -155,8 +163,8 @@ MANIFEST="$DEST/meta/repos.tsv"
     unpushed=$(git -C "$d" log --oneline '@{u}..' 2>/dev/null | wc -l | tr -d ' ')
     printf '%s\t%s\t%s\t%s\t%s\n' "$d" "$remote" "$head" "$dirty" "$unpushed"
     # capture in-flight edits to tracked files; cheap insurance, tiny files
-    # Only modified tracked files produce a diff; untracked ones are already
-    # in the file list above, so an empty patch means nothing was at risk.
+    # Context only -- the modified files themselves are copied above, so a
+    # "Binary files differ" line here is harmless rather than a data loss.
     if [ "$dirty" != "0" ]; then
       git -C "$d" diff HEAD > "$DEST/meta/$d.patch" 2>/dev/null
       [ -s "$DEST/meta/$d.patch" ] || rm -f "$DEST/meta/$d.patch"
