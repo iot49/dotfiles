@@ -5,3 +5,13 @@ alias dc='docker compose'
 
 # login to the server (from local network in sf)
 alias server='ssh boser@server.local'
+
+# Scratch python: numpy/scipy/pandas/matplotlib/ipython on tap, WITHOUT putting
+# them in the uv-managed interpreter that `python3` resolves to -- that one stays
+# package-free so `uv python upgrade` can never take packages with it, and
+# nothing installed for convenience can break scripts, cron or launchd jobs.
+#
+# Add more any time:  uv pip install --python ~/.venvs/scratch <pkg>
+# Rebuild from empty: see README "Python Management"
+alias py='$HOME/.venvs/scratch/bin/python'
+alias ipy='$HOME/.venvs/scratch/bin/ipython'

@@ -154,6 +154,27 @@ Homebrew also carries `python@3.11` as a dependency of `llvm` and `python-tk@3.1
 > [!NOTE]
 > `--default` is still marked experimental by uv and prints a warning. If it is ever removed, the shims are three `ln -sfn` commands — see the new-machine steps above.
 
+### Scratch environment (`py` / `ipy`)
+
+Keeping the default interpreter package-free would make quick numpy work annoying, so convenience packages live in a throwaway venv instead — `~/.venvs/scratch`, reached via the `py` and `ipy` aliases. It starts as fast as bare `python` (~30 ms, ~150 ms with numpy imported), and because it is not the managed interpreter, nothing in it can break `python3` for scripts, cron or launchd, and `uv python upgrade` cannot take packages with it.
+
+```bash
+# recreate on a new machine, or whenever it gets messy (it is disposable)
+uv venv ~/.venvs/scratch --python 3.12
+uv pip install --python ~/.venvs/scratch numpy scipy matplotlib pandas ipython
+
+# add to it any time
+uv pip install --python ~/.venvs/scratch <package>
+```
+
+Not tracked in git — it is ~300 MB of regenerable packages, reproduced by the two commands above. For *scripts* rather than the REPL, prefer PEP 723 inline metadata with `uv run script.py`, which needs no environment at all:
+
+```python
+# /// script
+# dependencies = ["numpy"]
+# ///
+```
+
 ### PATH ordering (why it lives in `.zshenv`, not `.zshrc`)
 
 `.zshrc` runs **only for interactive shells**. With `PATH` set there, `python3` meant uv 3.12 in a terminal but Homebrew 3.11 in anything non-interactive — Makefiles, `sh -c`, `subprocess`, cron and launchd jobs — because macOS `path_helper` puts `/usr/local/bin` first. Silent, and it only bites in automation.
