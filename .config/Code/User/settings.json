@@ -39,7 +39,7 @@
   "[javascript]": {
     "editor.defaultFormatter": "vscode.typescript-language-features"
   },
-  "python.defaultInterpreterPath": "/Users/ttmetro/Dropbox/iot/rv/gateway/.direnv/python-3.11.3",
+  "python.defaultInterpreterPath": "${userHome}/.local/bin/python",
   "git.confirmSync": false,
   "javascript.inlayHints.parameterNames.enabled": "all",
   "javascript.inlayHints.enumMemberValues.enabled": true,
