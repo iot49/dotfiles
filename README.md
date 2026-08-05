@@ -81,7 +81,15 @@ brew install --cask --adopt visual-studio-code
 `uv` is deliberately **not** a Homebrew package — it is installed standalone so Python is insulated from Homebrew and macOS updates:
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-~/.bin/setup-python-links          # creates python/python3/pip/pip3 links in ~/.local/bin
+
+# default interpreter for ad-hoc use; uv keeps these shims correct across upgrades
+uv python install 3.12 --default --force
+
+# pip shims, which uv does not manage -- point at the minor-version directory
+# (cpython-3.12-*), NOT the patch one, so they survive `uv python upgrade`
+MINOR="$HOME/.local/share/uv/python/cpython-3.12-$(uname -s | tr 'A-Z' 'a-z')-$(uname -m)-none"
+ln -sfn "$MINOR/bin/pip" ~/.local/bin/pip
+ln -sfn "$MINOR/bin/pip3" ~/.local/bin/pip3
 ```
 
 **4. Wire up VS Code**
@@ -114,7 +122,7 @@ exec zsh
 cd ~ && git pull
 brew bundle install --file=~/Brewfile     # pick up newly added packages
 ```
-Re-run `~/.bin/set-vscode-file-associations.sh` if macOS or VS Code has reset file associations (they reset on some upgrades), and `~/.bin/setup-python-links` after a `uv` Python upgrade.
+Re-run `~/.bin/set-vscode-file-associations.sh` if macOS or VS Code has reset file associations (they reset on some upgrades). The Python shims no longer need re-running after an upgrade — see below.
 
 To capture newly installed packages back into the repo:
 ```bash
@@ -130,10 +138,33 @@ Only a subset applies. `.zshrc_Linux` assumes a Docker container on a server and
 
 ## 🐍 Python Management & direnv (macOS Insulation)
 
-- Python versions are managed dynamically using **`uv`** to insulate development environments from macOS system Python updates.
-- Standalone Python binaries installed by `uv` are linked globally to the user environment via symlinks in `~/.local/bin/` (which is prepended to the `PATH` in `~/.zshrc`).
-- To initialize or update these symlinks dynamically based on the system's architecture, use the helper script:
-  - `~/.bin/setup-python-links` (tracks `python`, `python3`, `pip`, and `pip3` to the appropriate `uv` toolchain).
+Three Pythons coexist on this Mac. The split is deliberate:
+
+| Interpreter | Role |
+|---|---|
+| `/usr/bin/python3` (Apple, 3.9) | macOS internals only — **never** used for development, never modified |
+| `~/.local/bin/python3` → uv 3.12 | the default for ad-hoc scripts and the REPL |
+| per-project `.venv` (uv + direnv) | all real work |
+
+Homebrew also carries `python@3.11` as a dependency of `llvm` and `python-tk@3.11`. It cannot be uninstalled and is not used directly; the `PATH` ordering below keeps it from shadowing uv.
+
+- `uv python install 3.12 --default` creates and maintains the `python`/`python3`/`python3.12` shims in `~/.local/bin`. They point at the **minor-version** directory (`cpython-3.12-*`), so `uv python upgrade` swaps the patch release underneath without breaking them.
+- `pip`/`pip3` are not managed by uv and are symlinked by hand — also to the minor-version directory, for the same reason. Keep the default interpreter package-free: use `uv tool install` for CLI tools and `uv run --with X` for one-offs, so a `uv python upgrade` never takes packages with it.
+
+> [!NOTE]
+> `--default` is still marked experimental by uv and prints a warning. If it is ever removed, the shims are three `ln -sfn` commands — see the new-machine steps above.
+
+### PATH ordering (why it lives in `.zshenv`, not `.zshrc`)
+
+`.zshrc` runs **only for interactive shells**. With `PATH` set there, `python3` meant uv 3.12 in a terminal but Homebrew 3.11 in anything non-interactive — Makefiles, `sh -c`, `subprocess`, cron and launchd jobs — because macOS `path_helper` puts `/usr/local/bin` first. Silent, and it only bites in automation.
+
+So `PATH` is set in **`.zshenv`** (every zsh) and re-prepended in **`.zprofile`** (login shells, after `/etc/zprofile` runs `path_helper` and hoists the system directories back to the front). `typeset -U path` keeps the second prepend from duplicating entries. Verify with:
+
+```bash
+for f in -lic -ic -lc -c; do /bin/zsh $f 'python3 --version'; done   # all must agree
+```
+
+Note that launchd jobs read none of these files — they inherit launchd's own environment. Scripts run by an agent should call absolute paths or set `PATH` in the plist.
 - **direnv** is configured (`~/.config/direnv/direnvrc`) to manage virtualenv switching:
   - `layout_uv` validates or prompts for active virtual environments automatically in supported workspaces.
 

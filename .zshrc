@@ -33,8 +33,9 @@ setopt HIST_REDUCE_BLANKS
 setopt HIST_FIND_NO_DUPS
 setopt HIST_EXPIRE_DUPS_FIRST
 
-# Local bin path
-export PATH="$HOME/.local/bin:$HOME/.bin:$PATH"
+# PATH is set in .zshenv (all shells) and re-prepended in .zprofile (after
+# path_helper). Deliberately not set here: .zshrc runs only for interactive
+# shells, which is what let scripts pick up the wrong python.
 
 # helper ... source if file exists
 function run_if() {
