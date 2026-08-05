@@ -41,32 +41,90 @@ Since the home directory `~` is the Git repository itself, syncing is done direc
    git pull
    ```
 
-### Installing on a New Machine
-To set up this environment on a fresh machine, follow these steps:
+### Installing on a New Machine (macOS)
 
-1. **Initialize Git and add remote**:
-   ```bash
-   cd ~
-   git init
-   git remote add origin https://github.com/iot49/dotfiles.git
-   git fetch
-   ```
-2. **Back up existing conflicting files**:
-   Any standard files (like `.zshrc` or `.gitignore`) that already exist on the new machine will conflict with the checkout. Back them up:
-   ```bash
-   mkdir -p ~/dotfiles_backup
-   # Move conflicting files to the backup directory
-   ```
-3. **Checkout the repository**:
-   ```bash
-   git checkout main
-   ```
-4. **Initialize Toolchains & Links**:
-   - Ensure `uv` is installed.
-   - Run the Python setup script to create python/pip links:
-     ```bash
-     ~/.bin/setup-python-links
-     ```
+Run these in order. Steps 3 and 4 are separate installers on purpose — neither `uv` nor the `code` CLI comes from the Brewfile.
+
+**0. Prerequisites**
+```bash
+xcode-select --install                       # git and build tools
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+**1. Check out the dotfiles into `~`**
+
+The home directory *is* the repository, so clone in place rather than cloning into a subfolder:
+```bash
+cd ~
+git init
+git remote add origin https://github.com/iot49/dotfiles.git
+git fetch
+```
+Files that already exist (`.zshrc`, `.gitignore`, `.gitconfig`) will block the checkout. Back them up, then check out:
+```bash
+mkdir -p ~/dotfiles_backup
+for f in .zshrc .gitignore .gitconfig; do [ -e "$HOME/$f" ] && mv "$HOME/$f" ~/dotfiles_backup/; done
+git checkout main
+```
+
+**2. Install packages**
+```bash
+brew bundle install --file=~/Brewfile
+```
+Installs formulae, casks, VS Code extensions, and cargo/npm globals. If an app is already present by hand, adopt it instead of erroring:
+```bash
+brew install --cask --adopt visual-studio-code
+```
+
+**3. Install `uv` and link Python**
+
+`uv` is deliberately **not** a Homebrew package — it is installed standalone so Python is insulated from Homebrew and macOS updates:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+~/.bin/setup-python-links          # creates python/python3/pip/pip3 links in ~/.local/bin
+```
+
+**4. Wire up VS Code**
+
+The cask provides the `code` CLI, so the extensions in step 2 install themselves — the cask is listed before the `vscode` entries for exactly that reason. (Only if VS Code was installed by hand do you need Command Palette → *Shell Command: Install 'code' command in PATH*.)
+
+Point macOS at the tracked settings and set file associations:
+```bash
+VSU="$HOME/Library/Application Support/Code/User"
+mkdir -p "$VSU"
+for f in settings.json keybindings.json; do
+  [ -e "$VSU/$f" ] && [ ! -L "$VSU/$f" ] && mv "$VSU/$f" "$VSU/$f.bak"
+  ln -sfn "$HOME/.config/Code/User/$f" "$VSU/$f"
+done
+~/.bin/set-vscode-file-associations.sh    # needs duti (from the Brewfile)
+```
+
+**5. Enable the 1Password SSH agent**
+
+`.zshrc_Darwin` sets `SSH_AUTH_SOCK` to 1Password's agent socket. Open the 1Password app → *Settings → Developer → Use the SSH agent*. Git and SSH keys are managed there; no key files or `.env` secrets on disk.
+
+**6. Restart the shell**
+```bash
+exec zsh
+```
+
+### Updating an Existing Machine
+
+```bash
+cd ~ && git pull
+brew bundle install --file=~/Brewfile     # pick up newly added packages
+```
+Re-run `~/.bin/set-vscode-file-associations.sh` if macOS or VS Code has reset file associations (they reset on some upgrades), and `~/.bin/setup-python-links` after a `uv` Python upgrade.
+
+To capture newly installed packages back into the repo:
+```bash
+cd ~ && brew bundle dump --force --file=Brewfile
+git add -f Brewfile && git commit -m "Update Brewfile" && git push
+```
+
+### Linux
+
+Only a subset applies. `.zshrc_Linux` assumes a Docker container on a server and is intentionally minimal. Portable pieces: `.zshrc`/`.zsh_alias`, `.gitconfig`, `.config/git/ignore`, `.claude/`, `.gemini/`, and `.config/Code/User/` (VS Code reads that path natively on Linux — no symlink needed). The Brewfile, the file-association script, and the 1Password agent socket are macOS-only; the script exits cleanly on other platforms.
 
 ---
 

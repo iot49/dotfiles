@@ -63,7 +63,11 @@ brew "wget"
 # JavaScript package manager
 brew "yarn"
 # Command-line interface for 1Password
+cask "1password"
 cask "1password-cli"
+# Added manually: VS Code was installed by hand, so `brew bundle dump` did not
+# capture it. On a machine that already has it, use --adopt (see README).
+cask "visual-studio-code"
 # Command-line tools for building and debugging Android apps
 cask "android-commandlinetools"
 # Android SDK component
