@@ -87,7 +87,9 @@ uv python install 3.12 --default --force
 
 # pip shims, which uv does not manage -- point at the minor-version directory
 # (cpython-3.12-*), NOT the patch one, so they survive `uv python upgrade`
-MINOR="$HOME/.local/share/uv/python/cpython-3.12-$(uname -s | tr 'A-Z' 'a-z')-$(uname -m)-none"
+# uv names the platform "macos"/"aarch64", which is NOT what `uname` reports
+# (darwin/arm64) -- glob instead of constructing the name, or the links dangle.
+MINOR=$(ls -d "$HOME"/.local/share/uv/python/cpython-3.12-*-none | head -1)
 ln -sfn "$MINOR/bin/pip" ~/.local/bin/pip
 ln -sfn "$MINOR/bin/pip3" ~/.local/bin/pip3
 ```
@@ -104,7 +106,7 @@ for f in settings.json keybindings.json; do
   [ -e "$VSU/$f" ] && [ ! -L "$VSU/$f" ] && mv "$VSU/$f" "$VSU/$f.bak"
   ln -sfn "$HOME/.config/Code/User/$f" "$VSU/$f"
 done
-~/.bin/set-vscode-file-associations.sh    # needs duti (from the Brewfile)
+~/.bin/set-vscode-file-associations.sh    # no dependencies beyond system Python
 ```
 
 **5. Enable the 1Password SSH agent**
@@ -153,27 +155,6 @@ Homebrew also carries `python@3.11` as a dependency of `llvm` and `python-tk@3.1
 
 > [!NOTE]
 > `--default` is still marked experimental by uv and prints a warning. If it is ever removed, the shims are three `ln -sfn` commands — see the new-machine steps above.
-
-### Scratch environment (`py` / `ipy`)
-
-Keeping the default interpreter package-free would make quick numpy work annoying, so convenience packages live in a throwaway venv instead — `~/.venvs/scratch`, reached via the `py` and `ipy` aliases. It starts as fast as bare `python` (~30 ms, ~150 ms with numpy imported), and because it is not the managed interpreter, nothing in it can break `python3` for scripts, cron or launchd, and `uv python upgrade` cannot take packages with it.
-
-```bash
-# recreate on a new machine, or whenever it gets messy (it is disposable)
-uv venv ~/.venvs/scratch --python 3.12
-uv pip install --python ~/.venvs/scratch numpy scipy matplotlib pandas ipython
-
-# add to it any time
-uv pip install --python ~/.venvs/scratch <package>
-```
-
-Not tracked in git — it is ~300 MB of regenerable packages, reproduced by the two commands above. For *scripts* rather than the REPL, prefer PEP 723 inline metadata with `uv run script.py`, which needs no environment at all:
-
-```python
-# /// script
-# dependencies = ["numpy"]
-# ///
-```
 
 ### PATH ordering (why it lives in `.zshenv`, not `.zshrc`)
 
@@ -294,5 +275,5 @@ Nightly is cheap because rsync is incremental — a typical night re-uploads not
 
 - **VS Code** is the default editor and the default handler for code/text file types.
   - User settings live at `~/.config/Code/User/` (Linux-native path, tracked here). On macOS, `~/Library/Application Support/Code/User/{settings,keybindings}.json` are symlinks into it.
-  - File associations are set by `~/.bin/set-vscode-file-associations.sh` (macOS only; requires `duti`). Re-run after macOS or VS Code upgrades.
+  - File associations are set by `~/.bin/set-vscode-file-associations.sh` (macOS only). It writes the LaunchServices preference file directly, picking `LSHandlerContentType` for extensions with a concrete UTI and `LSHandlerContentTag` for those with a dynamic one -- `duti` only ever writes the latter, so it silently fails on types like `.pas`, and forcing it throws one modal confirmation dialog per extension. Re-run after macOS or VS Code upgrades.
 - **Brewfile:** Homebrew formulae, casks, VS Code extensions, and cargo/npm globals are captured in [Brewfile](Brewfile). Restore on a new Mac with `brew bundle install`; refresh with `brew bundle dump --force`.

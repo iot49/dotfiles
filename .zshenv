@@ -9,7 +9,12 @@
 # system directories back to the front and undoes the ordering below. ~/.zprofile
 # re-prepends afterwards to restore it. Both files are needed.
 
-. "$HOME/.cargo/env"
+# Homebrew: sets PATH/MANPATH/INFOPATH and HOMEBREW_*. Needed here rather than
+# in .zshrc so non-interactive shells also find brew-installed tools (direnv).
+[ -x /opt/homebrew/bin/brew ] && eval "$(/opt/homebrew/bin/brew shellenv)"
+
+# Rust toolchain, only when rustup has been installed on this machine.
+[ -r "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
 
 # Keep PATH entries unique; the first occurrence wins, so re-prepending later is
 # idempotent rather than producing duplicates.

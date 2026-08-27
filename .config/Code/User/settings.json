@@ -1,71 +1,108 @@
 {
-  "explorer.confirmDelete": false,
-  "explorer.confirmDragAndDrop": false,
-  "security.workspace.trust.untrustedFiles": "open",
-  "terminal.integrated.enableMultiLinePasteWarning": false,
-  "workbench.startupEditor": "none",
-  "[dart]": {
-    "editor.formatOnSave": true,
-    "editor.formatOnType": true,
-    "editor.rulers": [80],
-    "editor.selectionHighlight": false,
-    "editor.suggest.snippetsPreventQuickSuggestions": false,
-    "editor.suggestSelection": "first",
-    "editor.tabCompletion": "onlySnippets",
-    "editor.wordBasedSuggestions": "off"
-  },
-  "cmake.configureOnOpen": true,
-  "editor.minimap.enabled": false,
-  "[python]": {
-    "editor.insertSpaces": true,
-    "editor.tabSize": 4,
-    "editor.formatOnType": true
-  },
-  "liveServer.settings.CustomBrowser": "chrome",
-  "liveServer.settings.root": "/",
-  "liveServer.settings.fullReload": true,
   "workbench.editor.enablePreview": false,
-  "[html]": {
-    "editor.defaultFormatter": "vscode.html-language-features"
+  "explorer.confirmDelete": false,
+  "security.workspace.trust.untrustedFiles": "open",
+  "terminal.integrated.defaultProfile.osx": "zsh",
+  "explorer.confirmDragAndDrop": false,
+  "workbench.colorTheme": "Visual Studio Light",
+  "git.openRepositoryInParentFolders": "always",
+  "git.autofetch": true,
+  "jupyter.askForKernelRestart": false,
+  "notebook.lineNumbers": "on",
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "[json]": {
-    "editor.defaultFormatter": "vscode.json-language-features"
-  },
-  "[yaml]": {
-    "editor.autoIndent": "advanced",
-    "editor.tabSize": 2,
-    "editor.defaultFormatter": "redhat.vscode-yaml"
-  },
-  "[javascript]": {
-    "editor.defaultFormatter": "vscode.typescript-language-features"
-  },
-  "python.defaultInterpreterPath": "${userHome}/.local/bin/python",
   "git.confirmSync": false,
-  "javascript.inlayHints.parameterNames.enabled": "all",
-  "javascript.inlayHints.enumMemberValues.enabled": true,
-  "javascript.inlayHints.variableTypes.enabled": true,
-  "typescript.inlayHints.functionLikeReturnTypes.enabled": true,
-  "typescript.inlayHints.parameterTypes.enabled": true,
-  "typescript.inlayHints.propertyDeclarationTypes.enabled": true,
-  "typescript.inlayHints.variableTypes.enabled": true,
-  "workbench.colorTheme": "Light+",
+  "git.enableSmartCommit": true,
+  "cmake.showOptionsMovedNotification": false,
+  "cmake.configureOnOpen": false,
+  "workbench.editorAssociations": {
+    "*.csv": "gc-excelviewer-csv-editor"
+  },
+  "githubPullRequests.createOnPublishBranch": "never",
+  "github.copilot.editor.enableAutoCompletions": true,
+  "makefile.configureOnOpen": false,
+  "python.defaultInterpreterPath": "${userHome}/.local/bin/python",
+  "jupyter.notebookFileRoot": "${workspaceFolder}/leaf/remote",
+  "C_Cpp.clang_format_fallbackStyle": "{ BasedOnStyle: Google, IndentWidth: 4, ColumnLimit: 0}",
+  "editor.minimap.renderCharacters": false,
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "vsicons.dontShowNewVersionMessage": true,
+  "notebook.confirmDeleteRunningCell": false,
+  "[css]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "markdown.copyFiles.destination": {
+    "**/*": "images/${documentBaseName}/"
+  },
+  "explorer.fileNesting.patterns": {
+    "*.ts": "${capture}.js",
+    "*.js": "${capture}.js.map, ${capture}.min.js, ${capture}.d.ts",
+    "*.jsx": "${capture}.js",
+    "*.tsx": "${capture}.ts",
+    "tsconfig.json": "tsconfig.*.json",
+    "package.json": "package-lock.json, yarn.lock, pnpm-lock.yaml, bun.lockb",
+    "Cargo.toml": "Cargo.lock",
+    "*.sqlite": "${capture}.${extname}-*",
+    "*.db": "${capture}.${extname}-*",
+    "*.sqlite3": "${capture}.${extname}-*",
+    "*.db3": "${capture}.${extname}-*",
+    "*.sdb": "${capture}.${extname}-*",
+    "*.s3db": "${capture}.${extname}-*"
+  },
+  "[python]": {
+    "editor.formatOnType": true,
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit",
+      "source.organizeImports": "explicit"
+    }
+  },
+  "notebook.formatOnSave.enabled": true,
+  "workbench.iconTheme": "material-icon-theme",
   "[typescript]": {
-    "editor.defaultFormatter": "vscode.typescript-language-features"
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
   "typescript.updateImportsOnFileMove.enabled": "always",
-  "[css]": {
-    "editor.defaultFormatter": "vscode.css-language-features"
+  "roo-cline.allowedCommands": [
+    "git log",
+    "git diff",
+    "git show",
+    "mv",
+    "npm test",
+    "npm install",
+    "tsc"
+  ],
+  "terminal.integrated.enableMultiLinePasteWarning": "never",
+  "[html]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "editor.tabSize": 2,
-"editor.detectIndentation": false,
+  "roo-cline.deniedCommands": [],
+  "[markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[dockercompose]": {
+    "editor.insertSpaces": true,
+    "editor.tabSize": 2,
+    "editor.autoIndent": "advanced",
+    "editor.quickSuggestions": {
+      "other": true,
+      "comments": false,
+      "strings": true
+    },
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "[github-actions-workflow]": {
+    "editor.defaultFormatter": "redhat.vscode-yaml"
+  },
+  "containers.containerClient": "com.microsoft.visualstudio.containers.docker",
+  "containers.orchestratorClient": "com.microsoft.visualstudio.orchestrators.dockercompose",
+  "files.exclude": {
+    "**/__pycache__": true
+},
 "terminal.integrated.mouseWheelScrollSensitivity": 3,
-"terminal.integrated.gpuAcceleration": "off",
-"yaml.disableSchemaDetection": [
-  "**/.github/workflows/*.yml",
-  "**/.github/workflows/*.yaml",
-  "**/.gitea/workflows/*.yml",
-  "**/.gitea/workflows/*.yaml",
-  "**/.forgejo/workflows/*.yml",
-  "**/.forgejo/workflows/*.yaml"
-]
+"terminal.integrated.gpuAcceleration": "off"
 }

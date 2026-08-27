@@ -2,24 +2,55 @@
 # Make VS Code the default app for text/code/config file types on macOS.
 #
 # Deliberately NOT included (something else is the obvious default):
-#   .html .htm .xhtml .xht .xhtm -> browser
+#   .html .htm .xhtml .xht .xhtm -> Chrome (asserted below)
 #   .pdf .ps .eps           -> Preview
 #   images/audio/video      -> Preview / QuickTime
 #   .storyboard .xib .pbxproj .xcodeproj -> Xcode
 #   .command                -> Terminal (it is meant to be executed)
 #
+# HOW THIS WORKS, and why it is not `duti`
+# ----------------------------------------
+# LaunchServices resolves an extension one of two ways, and the binding has to
+# match or it is silently ignored:
+#
+#   * concrete UTI  (.pas -> public.pascal-source)  -> resolved by UTI, so the
+#     handler must be recorded as LSHandlerContentType.
+#   * dynamic UTI   (.conf -> dyn.ah62d4rv4ge80g55sq2) -> no UTI exists, so the
+#     handler must be recorded as LSHandlerContentTag (the extension itself).
+#
+# `duti -s <app> .ext all` only ever writes the *tag* form. For every extension
+# backed by a concrete UTI it reports success and changes nothing -- and pushing
+# harder (setting viewer/editor/shell roles individually) makes Finder throw a
+# modal "open with Code, or keep TextEdit?" confirmation per extension, i.e.
+# dozens of dialogs to click. So this script probes each extension's real UTI
+# and writes the correct entry straight into the LaunchServices preference file.
+# Nothing prompts.
+#
 # Re-run after macOS/VS Code upgrades if associations get reset.
-# Requires: duti  (brew install duti)
+# Requires: nothing beyond the system Python.
 
 set -u
 
-# macOS only: LaunchServices/duti do not exist elsewhere.
+# macOS only: LaunchServices does not exist elsewhere.
 if [ "$(uname)" != Darwin ]; then
   echo "skipping: macOS only" >&2
   exit 0
 fi
 
-APP="com.microsoft.VSCode"
+# LaunchServices stores bundle ids lowercased.
+APP="com.microsoft.vscode"
+BROWSER="com.google.chrome"
+
+BROWSER_EXTS=(html htm xhtml xht xhtm)
+BROWSER_UTIS=(public.html)
+
+# Extensions VS Code lists, whose UTI actually belongs to a real binary format
+# owned by another app. Reassigning these would break that app, so leave them:
+#   .exs -> com.apple.logic.exs  (Logic/GarageBand sampler instrument)
+#   .mts -> AVCHD video          (not TypeScript, to LaunchServices)
+#   .dot -> Word template        (not Graphviz)
+#   .pot -> PowerPoint template  (not gettext)
+SKIP=(exs mts dot pot)
 
 EXTS=(
   # --- plain text / docs ---
@@ -112,7 +143,6 @@ EXTS=(
   zsh-theme
 )
 
-# UTI-level catch-alls so unknown/extension-less text files land in VS Code too.
 UTIS=(
   public.plain-text
   public.source-code
@@ -144,30 +174,98 @@ UTIS=(
   org.tug.tex
 )
 
-ok=0; fail=0
-for ext in "${EXTS[@]}"; do
-  if duti -s "$APP" ".$ext" all 2>/dev/null; then ok=$((ok+1)); else
-    fail=$((fail+1)); printf 'skip (no UTI): .%s\n' "$ext"
-  fi
-done
-for uti in "${UTIS[@]}"; do
-  if duti -s "$APP" "$uti" all 2>/dev/null; then ok=$((ok+1)); else
-    fail=$((fail+1)); printf 'skip (no UTI): %s\n' "$uti"
-  fi
-done
+export LS_APP="$APP" LS_BROWSER="$BROWSER"
+export LS_EXTS="${EXTS[*]}"           LS_UTIS="${UTIS[*]}"
+export LS_BROWSER_EXTS="${BROWSER_EXTS[*]}" LS_BROWSER_UTIS="${BROWSER_UTIS[*]}"
+export LS_SKIP="${SKIP[*]}"
 
-printf '\nSet %d associations to VS Code (%d skipped).\n' "$ok" "$fail"
+/usr/bin/python3 <<'PYEOF'
+import os, plistlib, pathlib, subprocess, tempfile
 
-# Types that belong to something other than VS Code, but had been claimed by
-# Antigravity IDE. Reasserted here so a re-run reproduces the full intended state.
-duti -s com.google.Chrome .xhtml all 2>/dev/null
-duti -s com.google.Chrome .xht   all 2>/dev/null
-duti -s com.google.Chrome .xhtm  all 2>/dev/null
-if [ -d /Applications/Xcode.app ]; then
-  duti -s com.apple.dt.Xcode .xcodeproj   all 2>/dev/null
-  duti -s com.apple.dt.Xcode .xcworkspace all 2>/dev/null
-fi
+APP     = os.environ["LS_APP"]
+BROWSER = os.environ["LS_BROWSER"]
+exts    = os.environ["LS_EXTS"].split()
+utis    = os.environ["LS_UTIS"].split()
+bexts   = os.environ["LS_BROWSER_EXTS"].split()
+butis   = os.environ["LS_BROWSER_UTIS"].split()
+skip    = set(os.environ["LS_SKIP"].split())
 
-# Known gap: .fs (F#) is claimed by VS Code and Antigravity as a legacy doc-type
-# with no registered UTI, so duti cannot target it. It resolves to VS Code on its
-# own once Antigravity is uninstalled.
+def probe(extensions):
+    """Map extension -> the UTI LaunchServices actually assigns it."""
+    out = {}
+    with tempfile.TemporaryDirectory() as d:
+        for e in extensions:
+            f = pathlib.Path(d, "probe." + e)
+            f.touch()
+            try:
+                u = subprocess.run(
+                    ["mdls", "-name", "kMDItemContentType", "-raw", str(f)],
+                    capture_output=True, text=True, timeout=10).stdout.strip()
+            except subprocess.SubprocessError:
+                u = ""
+            out[e] = u if u and u != "(null)" else ""
+    return out
+
+want = {}   # ("type", uti) | ("tag", ext)  ->  bundle id
+def assign(extensions, uti_list, bundle):
+    for u in uti_list:
+        want[("type", u)] = bundle
+    m = probe(extensions)
+    for e in extensions:
+        if e in skip:
+            continue
+        u = m.get(e, "")
+        # concrete UTI -> bind the UTI; dynamic or unknown -> bind the extension
+        if u and not u.startswith("dyn."):
+            want[("type", u)] = bundle
+        else:
+            want[("tag", e)] = bundle
+
+assign(exts, utis, APP)
+assign(bexts, butis, BROWSER)      # browser last: it wins any overlap
+
+p = pathlib.Path.home()/"Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist"
+d = plistlib.loads(p.read_bytes()) if p.exists() else {}
+handlers = d.setdefault("LSHandlers", [])
+
+def key(entry):
+    if "LSHandlerContentType" in entry:
+        return ("type", entry["LSHandlerContentType"])
+    if "LSHandlerContentTag" in entry:
+        return ("tag", entry["LSHandlerContentTag"])
+    return None
+
+changed = kept = 0
+index = {key(e): e for e in handlers if key(e)}
+for k, bundle in sorted(want.items()):
+    e = index.get(k)
+    if e is not None:
+        if e.get("LSHandlerRoleAll") == bundle:
+            kept += 1
+            continue
+        e["LSHandlerRoleAll"] = bundle
+    else:
+        e = {"LSHandlerRoleAll": bundle,
+             "LSHandlerModificationDate": 0,
+             "LSHandlerPreferredVersions": {"LSHandlerRoleAll": "-"}}
+        if k[0] == "type":
+            e["LSHandlerContentType"] = k[1]
+        else:
+            e["LSHandlerContentTag"] = k[1]
+            e["LSHandlerContentTagClass"] = "public.filename-extension"
+        handlers.append(e)
+        index[k] = e
+    changed += 1
+
+p.parent.mkdir(parents=True, exist_ok=True)
+p.write_bytes(plistlib.dumps(d, fmt=plistlib.FMT_BINARY))
+print(f"{changed} association(s) written, {kept} already correct, "
+      f"{len(handlers)} entries total.")
+PYEOF
+
+# Reload the LaunchServices daemon and Finder so the new bindings take effect.
+killall lsd 2>/dev/null || true
+sleep 1
+killall Finder 2>/dev/null || true
+
+echo "Done. Open-with bindings reloaded."
