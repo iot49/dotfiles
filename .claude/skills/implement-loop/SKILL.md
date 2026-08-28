@@ -8,8 +8,11 @@ Launch `~/.claude/skills/implement-loop/implement-loop.sh` in the background,
 from the repo the command was typed in, and get out of the way. The script is
 self-contained; this skill is only the front door.
 
-Arguments: issue numbers, or nothing at all (nothing = every open issue
-labelled `ready-for-agent`).
+Arguments: issue numbers, or — the default — nothing at all. With nothing,
+the batch is every open issue labelled `ready-for-agent`, and after a merged
+batch the script re-queries the label and keeps going while anything new or
+newly unblocked is runnable. Do not narrow the batch on the user's behalf;
+if they wanted a subset they would have named it.
 
 ## Before launching
 
@@ -24,7 +27,7 @@ Check cheaply, in this session, without starting anything heavy:
    `~/.claude/skills/implement-loop/implement-loop-setup.sh` once and stop.
 3. `~/.claude/skills/implement-loop/implement-loop.sh` exists and is
    executable.
-4. Tell the user which issues the batch will contain (run
+4. Tell the user which issues the first batch will contain (run
    `gh issue list --label ready-for-agent --state open` if no arguments were
    given) and which gate will likely resolve, then ask for a one-word go-ahead.
    This is the only human touchpoint; after it, the run is unattended through

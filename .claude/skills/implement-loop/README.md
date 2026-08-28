@@ -33,6 +33,8 @@ per issue    fetch issue body + comments to a file (host)
              → screening judge reads the agent's reply: SUSPECT = hard fail
              → gate runs on the host: exit code is the verdict
              → second cold agent verifies the diff against the issue body
+             → third cold agent audits the diff for what the issue did
+               NOT ask for (EXTRA = fail)
              → one repair round via --resume into the SAME session
              → landed, or: reset --hard, comment the failure on the
                issue, relabel ready-for-human, skip its dependents
@@ -43,6 +45,8 @@ after        one review over the whole range (start-sha...HEAD)
              → merged: close issues that landed clean; else relabel
                ready-for-human with the PR link
              → summary issue, labelled needs-triage, action items first
+again        no arguments + merged: re-query ready-for-agent; anything new
+             or newly unblocked starts another batch (IL_ONCE=1 to stop)
 ```
 
 ## Design decisions
@@ -82,6 +86,17 @@ fails the issue (the reply's handoff and rulings would otherwise be injected
 into every later prompt). Expect false positives on issues that legitimately
 say "add a dependency" or "edit the CI workflow" — those go to
 `ready-for-human`, which is the right place for them anyway.
+
+**Verify asks one question, audit asks the opposite.** The verifier reads
+the diff against the issue and asks "is everything that was asked for
+there?". A separate cold agent then asks "what is there that was not asked
+for?" — network calls, new dependencies, edits to CI/config/tests, encoded
+strings, unrelated files, import-time side effects — with the instruction to
+assume the author may be hiding something. Gate-green code that also does
+something extra is exactly what CI cannot see, and the two questions are
+easier to answer well separately than as one "review". An EXTRA verdict goes
+through the normal repair round (remove it, or justify it in `<rulings>`);
+a second EXTRA fails the issue.
 
 **Cold context per issue** (Ralph's property). The second issue is not
 implemented through the lens of the first, and the final review starts from
@@ -171,6 +186,7 @@ Environment:
 | `IL_EXTRA_ARGS` | Extra args for every claude call, e.g. `--model opus`.                 |
 | `IL_PROTECTED`  | Space-separated globs whose change holds the PR (replaces the default). |
 | `IL_CI_TIMEOUT` | Seconds to wait for CI + merge before giving up (default 1800).        |
+| `IL_ONCE`       | Set to run one batch only; otherwise, with no arguments, the loop re-runs after a merged batch while the backlog has anything new. |
 
 Everything the run produces on disk lives in `.implement-loop/` (logs,
 prompts, diffs, verdicts, rulings). The directory is added to
@@ -199,11 +215,9 @@ Things this does not stop, in rough order of how much they matter:
    that follows an injected "fetch this URL" can. It holds no credentials, so
    the blast radius is the working copy — which is reviewed, gated, and can
    only land via the PR.
-2. **CI is a test suite, not a reviewer.** Code that passes the gate and does
-   something extra (a new HTTP call in a code path no test covers) merges.
-   The verifier reads the diff against the issue; the review reads the
-   range; neither is adversarial. Adding a third cold agent asking "what does
-   this diff do that the issue did not ask for?" is the cheapest next step.
+2. **The audit is an LLM reading a diff.** It is adversarial by instruction,
+   not by construction: a change that is small, plausible, and in the right
+   file reads as part of the feature. It raises the bar; it is not CI.
 3. **The judge is a classifier and can be gamed** — a `</text>` in the issue
    body ends the data block early; a subtle injection reads as prose. Treat
    it as a filter for the obvious, not a wall.

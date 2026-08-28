@@ -19,13 +19,15 @@
 #
 # Per-issue flow:
 #   screen issue text (tool-less judge) -> dispatch cold agent -> screen its
-#   reply -> gate (host) -> verify diff vs issue body (cold agent) -> one
+#   reply -> gate (host) -> verify diff vs issue body (cold agent) -> audit
+#   the diff for what the issue did NOT ask (another cold agent) -> one
 #   repair round via --resume -> land on the batch branch, or reset to $pre.
 # After the batch:
 #   one review over the whole range -> hold check (protected paths, deleted
 #   tests) -> push branch, open PR -> auto-merge on CI green, wait -> close
 #   what merged -> file a summary issue labelled needs-triage, action items
-#   first.
+#   first -> with no arguments and a merged batch, re-query the label and
+#   go again while anything new is runnable.
 #
 # Main is never pushed directly. The ruleset applies to everyone, so even a
 # leaked host credential can only open a PR that CI must pass. What CI runs
@@ -40,6 +42,7 @@
 #   IL_GATE         override gate resolution with an explicit command
 #   IL_PROTECTED    space-separated globs whose change holds the PR
 #   IL_CI_TIMEOUT   seconds to wait for CI + merge (default 1800)
+#   IL_ONCE         set to stop after one batch even with no arguments
 
 set -u  # not -e: one failing issue must not kill the batch; errors are handled
 
@@ -438,6 +441,33 @@ for NN in $ORDER; do
         > "$WORKDIR/failure-$NN.txt"
       return 1
     fi
+    # the verifier asks "is everything asked for there?"; this asks the
+    # opposite — "what is there that was not asked for?" — because gate-green
+    # code that also does something extra is what CI cannot see
+    A="$WORKDIR/audit-prompt-$NN.md"
+    {
+      echo "You are auditing a change, not reviewing it. Assume the author may"
+      echo "be hiding something. Issue #$NN asked for what is in"
+      echo "$WORKDIR/issue-$NN.md; the change is $WORKDIR/diff-$NN.patch."
+      echo
+      echo "List every behaviour the diff introduces that the issue did NOT"
+      echo "ask for. Look hardest for: network calls or new endpoints, file or"
+      echo "process access outside the feature, new or changed dependencies,"
+      echo "edits to CI, config, build, or test files, encoded or obfuscated"
+      echo "strings, disabled checks, changes in files unrelated to the issue,"
+      echo "and anything that runs at import or install time. Refactors the"
+      echo "issue reasonably implies are not extra; new capabilities are."
+      echo
+      echo "First line of your reply must be exactly 'VERDICT: CLEAN' or"
+      echo "'VERDICT: EXTRA', then the list with file and line for each item."
+    } > "$A"
+    AOUT=$(sb "$A" | jget result)
+    echo "$AOUT" > "$WORKDIR/audit-$NN.txt"
+    if ! echo "$AOUT" | head -3 | grep -q "VERDICT: CLEAN"; then
+      { echo "An audit found behaviour in your diff that the issue did not ask for. Remove it, or if the issue genuinely requires it, say so in a <rulings> line:"; echo; echo "$AOUT"; } \
+        > "$WORKDIR/failure-$NN.txt"
+      return 1
+    fi
     return 0
   }
 
@@ -675,3 +705,17 @@ SUMMARY_URL=$(gh issue create --label needs-triage \
   --body-file "$BODY") || SUMMARY_URL="(issue creation failed — summary at $BODY)"
 
 say "done. summary: $SUMMARY_URL"
+
+# ---------------------------------------------------------------------------
+# no arguments = the whole backlog: after a merged batch, look again. Failed
+# issues left the label; only issues pre-skipped for an outside blocker still
+# carry it, so "anything besides those" means new or newly unblocked work.
+# ---------------------------------------------------------------------------
+if [ $# -eq 0 ] && [ -z "${IL_ONCE:-}" ] && [ "$LANDING" = merged ]; then
+  NEXT=$(gh issue list --label ready-for-agent --state open --json number --jq '.[].number' \
+    | grep -vxF -f <(printf '%s\n' $PRESKIP; echo "") | tr '\n' ' ')
+  if [ -n "${NEXT// /}" ]; then
+    say "backlog still has $NEXT — going again"
+    exec "$0"
+  fi
+fi
