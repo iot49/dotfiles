@@ -16,11 +16,11 @@ Check cheaply, in this session:
    branch, and `gh repo view` resolves. If not, report why and stop.
 2. A gate resolves: a `gate:` or `ci:` line in `CLAUDE.md`, or
    `scripts/check.sh`, or a `check:` target in `Makefile`, or an npm `check`
-   script. If none does, ask the user what command should be the gate and add
-   a `gate: <command>` line to `CLAUDE.md` (commit it with the workflow — the
-   script pushes what is staged before it protects the branch... it does not:
-   commit it yourself first, then run the script). CI without a gate fails
-   every PR, which blocks every merge.
+   script. If none does, ask the user what command should be the gate, add
+   a `gate: <command>` line to `CLAUDE.md`, and commit and push it before
+   running the script (it refuses a dirty tree, and after it runs the branch
+   only takes PRs). CI without a gate fails every PR, which blocks every
+   merge.
 3. Tell the user, in three lines, what the script will do to this repo:
    commit and push `.github/workflows/ci.yml`; create a ruleset on the
    default branch that requires a PR and the `ci` check **with no bypass,
