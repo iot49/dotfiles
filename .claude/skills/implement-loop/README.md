@@ -17,6 +17,7 @@ rulings, the give-up path) crossed with
 | ------------------------- | -------------------------------------------------------------- |
 | `implement-loop.sh`       | The whole machine. Self-contained; runnable without the skill. |
 | `implement-loop-setup.sh` | Once per repo: CI workflow, branch ruleset, auto-merge, labels. The main script refuses to run until this has been done. |
+| `../implement-loop-setup/SKILL.md` | `/implement-loop-setup` — front door for the setup script: pre-checks, go-ahead, watches the first CI run. |
 | `SKILL.md`                | `/implement-loop` — thin launcher so the interface matches the other skills. Confirms the batch, `nohup`s the script, reports the log path. |
 
 ## What one run does
@@ -142,7 +143,8 @@ docker sandbox run claude        # authenticate the sandbox interactively once
 Once per repo:
 
 ```sh
-~/.claude/skills/implement-loop/implement-loop-setup.sh
+/implement-loop-setup            # from Claude Code; or the script directly:
+implement-loop-setup.sh          # (symlinked into ~/.bin)
 npx skills add mattpocock/skills # puts /tdd and /code-review INSIDE the repo,
                                  # which is all the sandbox can see
 ```
