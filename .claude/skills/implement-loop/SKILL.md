@@ -1,6 +1,6 @@
 ---
 name: implement-loop
-description: Launch an unattended Ralph-style batch over ready-for-agent issues — cold sandboxed agent per issue, host-side gates and side effects, one review over the whole range, automatic push, results as closed issues plus a needs-triage summary issue.
+description: Launch an unattended Ralph-style batch over ready-for-agent issues — cold sandboxed agent per issue, tool-less screening judge on every input and reply, host-side gates and side effects, one review over the whole range, PR auto-merged on CI green, results as closed issues plus a needs-triage summary issue.
 disable-model-invocation: true
 ---
 
@@ -15,16 +15,20 @@ labelled `ready-for-agent`).
 
 Check cheaply, in this session, without starting anything heavy:
 
-1. `git status --porcelain` is empty and `gh repo view` resolves. If not,
-   report why and stop — the script would refuse anyway, but failing here is
-   friendlier.
-2. `~/.claude/skills/implement-loop/implement-loop.sh` exists and is
+1. `git status --porcelain` is empty, the current branch is the default
+   branch, and `gh repo view` resolves. If not, report why and stop — the
+   script would refuse anyway, but failing here is friendlier.
+2. The repo has been set up: `gh api repos/{owner}/{repo}/rules/branches/<default> --jq '.[].type'`
+   lists `pull_request` and `required_status_checks`, and
+   `.github/workflows/ci.yml` exists. If not, tell the user to run
+   `~/.claude/skills/implement-loop/implement-loop-setup.sh` once and stop.
+3. `~/.claude/skills/implement-loop/implement-loop.sh` exists and is
    executable.
-3. Tell the user which issues the batch will contain (run
+4. Tell the user which issues the batch will contain (run
    `gh issue list --label ready-for-agent --state open` if no arguments were
    given) and which gate will likely resolve, then ask for a one-word go-ahead.
    This is the only human touchpoint; after it, the run is unattended through
-   to the push.
+   to the merge.
 
 ## Launch
 
@@ -43,11 +47,14 @@ Tell the user:
 
 - the PID and the log path, and that
   `tail -f .implement-loop/run-*.log` follows it;
-- that results arrive on GitHub: landed issues closed, failures relabelled
-  `ready-for-human` with the failing output as a comment, and one
-  `needs-triage` summary issue whose top section is the action list;
-- that the commits push automatically unless the remote moved and the rebase
-  conflicted, in which case the summary issue says so.
+- that results arrive on GitHub: merged issues closed, failures and
+  screened-out issues relabelled `ready-for-human` with the reason as a
+  comment, and one `needs-triage` summary issue whose top section is the
+  action list;
+- that the batch lands as one PR on a branch, auto-merged when CI is green,
+  unless the diff touches protected paths (CI, gate, dependency manifests,
+  test deletions) — then the PR is held for a human and the summary issue
+  says so.
 
 Do not wait for the run, poll the log, or offer to babysit it. The whole
 point is that nobody watches.
@@ -57,10 +64,15 @@ point is that nobody watches.
 - `docker sandbox run claude` once interactively in the workspace, so the
   sandbox is authenticated. The script smoke-tests this and aborts with this
   instruction if it fails.
+- `implement-loop-setup.sh` once per repo: writes and pushes the CI
+  workflow, creates the default-branch ruleset (PR + `ci` check required, no
+  bypass — applies to the user too), enables auto-merge and rebase merge,
+  creates the labels.
 - The sandbox loads only what is inside the repo: install the skills the
   implementer uses (`/tdd`, `/code-review`) into the project with
   `npx skills add mattpocock/skills`. If they are absent the run still works —
   the prompts carry fallbacks — but the reviews are better with them.
 - The gate resolves as: `IL_GATE` env var, a `gate: <command>` line in
   `CLAUDE.md`, `./scripts/check.sh`, `make check`, then an npm `check` script.
-  No gate, no run.
+  No gate, no run. CI runs the `ci:` line if present, else the same gate,
+  with `CI=true` set so local-resource tests can skip themselves.
