@@ -1,0 +1,1 @@
+../.claude/skills/implement-loop/implement-loop.sh
