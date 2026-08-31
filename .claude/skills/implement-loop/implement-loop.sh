@@ -18,10 +18,13 @@
 # run once in this repo (CI workflow, branch ruleset, auto-merge).
 #
 # Per-issue flow:
-#   screen issue text (tool-less judge) -> dispatch cold agent -> screen its
-#   reply -> gate (host) -> verify diff vs issue body (cold agent) -> audit
-#   the diff for what the issue did NOT ask (another cold agent) -> one
-#   repair round via --resume -> land on the batch branch, or reset to $pre.
+#   screen issue text (tool-less judge) -> dispatch cold agent -> screen the
+#   <handoff>/<rulings> notes it leaves for later agents -> gate (host) ->
+#   verify diff vs issue body (cold agent) -> audit the diff for what the
+#   issue did NOT ask (another cold agent) -> one repair round via --resume ->
+#   land on the batch branch, or reset to $pre. A flagged note is cut and the
+#   work still stands or falls on the gate; only a flagged issue body, which
+#   an outsider may have written, stops the issue before anything runs.
 # After the batch:
 #   one review over the whole range -> hold check (protected paths, deleted
 #   tests) -> push branch, open PR -> auto-merge on CI green, wait -> close
@@ -299,6 +302,7 @@ say "plan: $ORDER"
 
 touch "$RULINGS"
 LANDED=""          # "NN:presha:postsha ..."
+DROPPED=""         # landed, but the screen flagged its notes and they were cut
 
 # ---------------------------------------------------------------------------
 # per issue
@@ -320,8 +324,23 @@ for NN in $ORDER; do
   fi
 
   PRE=$(git rev-parse HEAD)
-  gh issue view "$NN" --comments > "$WORKDIR/issue-$NN.md" \
-    || { echo "$NN" >> "$FAILED"; echo "could not fetch #$NN, skipping"; continue; }
+  # `--comments` prints the comments INSTEAD of the body, so ask for both. On
+  # an issue with no comments the one call printed nothing and still exited 0,
+  # and the agent was handed an empty file to implement from.
+  if ! { gh issue view "$NN"; echo; gh issue view "$NN" --comments; } \
+         > "$WORKDIR/issue-$NN.md"; then
+    echo "$NN" >> "$FAILED"; echo "could not fetch #$NN, skipping"; continue
+  fi
+
+  # ---- an unreadable issue is an aborted run, not a puzzle for the agent to
+  # solve by improvising: with no body it goes looking for one elsewhere -----
+  if [ -z "$(gh issue view "$NN" --json body --jq .body | tr -d '[:space:]')" ]; then
+    say "issue #$NN: empty body, not attempted"
+    echo "$NN" >> "$FAILED"
+    gh issue comment "$NN" --body "implement-loop: not attempted — the issue body is empty, so there is nothing to implement from. Write the body, then put \`ready-for-agent\` back." || true
+    gh issue edit "$NN" --remove-label ready-for-agent --add-label ready-for-human 2>/dev/null || true
+    continue
+  fi
 
   # ---- screen the input: anyone who can comment on the issue wrote part of
   # the prompt the agent is about to follow --------------------------------
@@ -413,15 +432,20 @@ for NN in $ORDER; do
   TXT=$(echo "$RES" | jget result)
   echo "$TXT" > "$WORKDIR/result-$NN.txt"
 
-  # ---- screen the output: handoff and rulings go into LATER prompts, so a
-  # captured agent's reply is the second-order injection channel -----------
-  screen_result() { # screen_result <replyfile> -> 0 ok; 1 flagged, hard fail
-    if ! judge "the reply of the agent that implemented issue #$NN" "$1" "$WORKDIR/judge-result-$NN.txt"; then
-      { echo "The screening judge flagged the implementing agent's own reply as manipulative:"; echo; cat "$WORKDIR/judge-result-$NN.txt"; } \
-        > "$WORKDIR/failure-$NN.txt"
-      return 1
-    fi
-    return 0
+  # ---- screen the output: <handoff> and <rulings> are the only part of a
+  # reply that reaches a LATER prompt, so they are the second-order injection
+  # channel — and they are all that is worth screening. Judging the whole
+  # report made the verdict turn on honest prose about the environment, which
+  # is both a false positive and inconsistent between runs. -----------------
+  screen_notes() { # screen_notes <replyfile> -> 0 clean; 1 flagged
+    # verdict named after the reply, so a repair round does not overwrite the
+    # first round's — the summary sends a human to both
+    local base=${1%.txt} B V
+    B="$base-notes.txt"; V="$WORKDIR/judge-$(basename "$base").txt"
+    { extract_tag handoff < "$1"; extract_tag rulings < "$1"; } > "$B"
+    [ -n "$(tr -d '[:space:]' < "$B")" ] || return 0
+    judge "the <handoff> and <rulings> notes left by the agent that implemented issue #$NN, which are pasted into the prompts of agents later in this batch" \
+      "$B" "$V"
   }
 
   # ---- gate, then verify --------------------------------------------------
@@ -489,10 +513,15 @@ for NN in $ORDER; do
     return 0
   }
 
+  # A flagged note is not a reason to throw the work away: the diff has its own
+  # three host-side checks below, and dropping the notes closes the channel the
+  # screen exists to close.
   OK=0
-  if ! screen_result "$WORKDIR/result-$NN.txt"; then
-    say "issue #$NN: reply flagged by the screen, no repair round"
-  elif check_issue; then OK=1
+  NOTES_FLAGGED=""
+  screen_notes "$WORKDIR/result-$NN.txt" \
+    || { say "issue #$NN: handoff/rulings flagged by the screen — dropped"; NOTES_FLAGGED=1; }
+
+  if check_issue; then OK=1
   else
     # ---- repair, once: same session still holds the context of what it tried
     say "issue #$NN: repair round"
@@ -501,19 +530,25 @@ for NN in $ORDER; do
     RRES=$(sb_resume "$SID" "$R")
     RTXT=$(echo "$RRES" | jget result)
     echo "$RTXT" > "$WORKDIR/result-$NN-repair.txt"
-    if screen_result "$WORKDIR/result-$NN-repair.txt"; then
-      cat "$WORKDIR/result-$NN-repair.txt" >> "$WORKDIR/result-$NN.txt"
-      check_issue && OK=1
-    fi
+    screen_notes "$WORKDIR/result-$NN-repair.txt" \
+      || { say "issue #$NN: repaired handoff/rulings flagged by the screen — dropped"; NOTES_FLAGGED=1; }
+    cat "$WORKDIR/result-$NN-repair.txt" >> "$WORKDIR/result-$NN.txt"
+    check_issue && OK=1
   fi
 
   if [ "$OK" = 1 ]; then
     POST=$(git rev-parse HEAD)
     LANDED="$LANDED $NN:$PRE:$POST"
-    cat "$WORKDIR/result-$NN.txt" | extract_tag handoff > "$WORKDIR/handoff-$NN.txt"
-    RUL=$(cat "$WORKDIR/result-$NN.txt" | extract_tag rulings)
-    [ -n "$RUL" ] && echo "$RUL" >> "$RULINGS"
-    say "issue #$NN landed ($PRE..$POST)"
+    if [ -n "$NOTES_FLAGGED" ]; then
+      : > "$WORKDIR/handoff-$NN.txt"
+      DROPPED="$DROPPED $NN"
+      say "issue #$NN landed ($PRE..$POST); its notes were dropped, nothing carries forward"
+    else
+      extract_tag handoff < "$WORKDIR/result-$NN.txt" > "$WORKDIR/handoff-$NN.txt"
+      RUL=$(extract_tag rulings < "$WORKDIR/result-$NN.txt")
+      [ -n "$RUL" ] && echo "$RUL" >> "$RULINGS"
+      say "issue #$NN landed ($PRE..$POST)"
+    fi
   else
     # ---- give up: leave the morning's triage already done -------------------
     say "issue #$NN: giving up, resetting to $PRE"
@@ -691,7 +726,10 @@ BODY="$WORKDIR/summary-$TS.md"
   while read -r n; do
     [ -n "$n" ] && echo "- #$n did not land — see its issue comment for the reason (\`ready-for-human\`)."
   done < <(sort -un "$FAILED")
-  [ -z "${SPEC_FAILS// /}" ] && [ ! -s "$FAILED" ] && [ "$LANDING" = merged ] \
+  for n in $DROPPED; do
+    echo "- #$n landed, but the screen flagged its \`<handoff>\`/\`<rulings>\` notes, so they were **cut** and no later agent saw them. Read \`$WORKDIR/judge-result-$n*.txt\` — either the note was fair and something about this repo needs fixing, or the agent was captured and the diff wants a second look."
+  done
+  [ -z "${SPEC_FAILS// /}" ] && [ -z "${DROPPED// /}" ] && [ ! -s "$FAILED" ] && [ "$LANDING" = merged ] \
     && echo "- Nothing. Everything landed, merged via $PR_URL, and is closed."
   echo
   echo "## What landed"

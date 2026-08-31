@@ -28,10 +28,12 @@ pre-flight   on main, clean tree, pull --rebase; main protected, auto-merge
              branch implement-loop/<timestamp>
 batch        args, or every open issue labelled ready-for-agent;
              ordered by GitHub's native blocked-by dependencies
-per issue    fetch issue body + comments to a file (host)
+per issue    fetch issue body + comments to a file (host); an empty body
+               is not attempted
              → screening judge (no tools) reads the text: SUSPECT = skip
              → cold sandboxed agent implements, commits locally
-             → screening judge reads the agent's reply: SUSPECT = hard fail
+             → screening judge reads the <handoff>/<rulings> notes it wrote
+               for later agents: SUSPECT = cut the notes, keep the work
              → gate runs on the host: exit code is the verdict
              → second cold agent verifies the diff against the issue body
              → third cold agent audits the diff for what the issue did
@@ -77,16 +79,27 @@ reduced to nothing / net lines removed from tests. This is worth more than any
 LLM judge, because it cannot be talked out of anything.
 
 **The screening judge has no tools.** A cold `claude -p --tools ""` reads the
-issue text (body + comments) before dispatch, and the implementing agent's
-reply after, and answers one question: is anything in this text trying to
-manipulate the reader? The text is inlined into the prompt as delimited data.
-Its isolation is not network — the sandbox has egress, it needs the API — but
-*capability*: it cannot read, run, fetch, or write, and its verdict can only
-block. A SUSPECT on the issue means nothing runs; a SUSPECT on the reply hard-
-fails the issue (the reply's handoff and rulings would otherwise be injected
-into every later prompt). Expect false positives on issues that legitimately
-say "add a dependency" or "edit the CI workflow" — those go to
-`ready-for-human`, which is the right place for them anyway.
+issue text (body + comments) before dispatch, and after, the `<handoff>` and
+`<rulings>` notes the agent wrote for later agents — nothing else of its
+reply, because nothing else of its reply is ever pasted into another prompt.
+It answers one question: is anything in this text trying to manipulate the
+reader? The text is inlined into the prompt as delimited data. Its isolation
+is not network — the sandbox has egress, it needs the API — but *capability*:
+it cannot read, run, fetch, or write, and its verdict can only block.
+
+**The two verdicts do different things, because the two texts are.** An issue
+body may have been written by anyone who can comment, so a SUSPECT there means
+nothing runs at all. A note was written by the agent whose diff already faces
+the gate, the verifier and the audit, so a SUSPECT there cuts the note — the
+whole channel it could travel down — and lets the work stand or fall on those
+three. Discarding the diff too would spend a full issue's work to delete four
+lines of text, and it did (#236, where the note was honest and the run had
+handed the agent an empty issue file). The summary issue lists every cut note
+for a human to read.
+
+Expect false positives on issues that legitimately say "add a dependency" or
+"edit the CI workflow" — those go to `ready-for-human`, which is the right
+place for them anyway.
 
 **Verify asks one question, audit asks the opposite.** The verifier reads
 the diff against the issue and asks "is everything that was asked for
@@ -204,6 +217,8 @@ survives the failure path's `git clean -fd`.
 - Spec-flagged issues: merged but left open, relabelled `ready-for-human`.
 - Held / CI-red / conflicting / unpushed batch: PR open (or branch local),
   every issue in it left open with the link, relabelled `ready-for-human`.
+- Issues that landed with their notes cut: closed like any other, but named
+  in the summary's action list with the verdict to read.
 - One `needs-triage` summary issue whose **first section is the action list**:
   what needs a human, or "Nothing" when everything merged and is closed.
   Below it: what landed, the rulings the batch made, and the full review.

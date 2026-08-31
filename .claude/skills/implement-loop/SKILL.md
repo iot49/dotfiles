@@ -1,6 +1,6 @@
 ---
 name: implement-loop
-description: Launch an unattended Ralph-style batch over ready-for-agent issues — cold sandboxed agent per issue, tool-less screening judge on every input and reply, host-side gates and side effects, one review over the whole range, PR auto-merged on CI green, results as closed issues plus a needs-triage summary issue.
+description: Launch an unattended Ralph-style batch over ready-for-agent issues — cold sandboxed agent per issue, tool-less screening judge on every issue body and on the notes each agent leaves for the next, host-side gates and side effects, one review over the whole range, PR auto-merged on CI green, results as closed issues plus a needs-triage summary issue.
 disable-model-invocation: true
 ---
 
