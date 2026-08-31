@@ -1,6 +1,6 @@
 ---
 name: batch-implement
-description: Implement a batch of ready-for-agent issues unattended — one cold subagent per issue, a gate between each, and one review over the whole range at the end.
+description: Implement a batch of ready-for-agent issues unattended — one cold subagent per issue, a gate between each, and one review over the whole range at the end. Superseded by /implement-loop; use this only where the current branch takes direct pushes.
 disable-model-invocation: true
 ---
 
@@ -13,6 +13,17 @@ The shape earns its cost twice. A cold subagent per issue means the second
 issue is not implemented through the lens of the first. A gate the *parent*
 runs means the agent that wrote the code is not the one that decides it
 passed.
+
+## Superseded by `/implement-loop`
+
+`/implement-loop` is this skill restructured. It keeps the gating, the
+handoffs, the rulings and the give-up path, and adds: every agent runs cold in
+a Docker sandbox with no credentials, all side effects stay on the host, and
+the batch lands as a PR that CI must pass rather than a direct push. Prefer
+it.
+
+This one is still the right call in a repo whose branch takes direct pushes,
+or when you want the batch inside your own session where you watch each gate.
 
 Arguments: issue numbers, or nothing at all.
 
@@ -31,6 +42,24 @@ names a repo, and nothing should.
   If nothing resolves, abort: a batch with no gate has nobody but the author
   of the code deciding it passed. The `<gate command>` in the per-issue prompt
   is this same command, substituted like `NN`.
+
+## Check the push can land, first
+
+This skill ends with `git push` to the current branch. If that branch is
+protected — a ruleset requiring a pull request — the push is rejected, and the
+batch sits local with nothing landed after a whole night's work. Check before
+doing anything else:
+
+```
+branch=$(git rev-parse --abbrev-ref HEAD)
+gh api "repos/{owner}/{repo}/rules/branches/$branch" --jq '.[].type'
+```
+
+If the output contains `pull_request`, abort. Say that the batch would build
+green commits and then fail to push, and that `/implement-loop` is the skill
+for this repo — it lands the same batch as a PR that CI must pass. Do not
+route around it by landing on some other branch: a batch that lands somewhere
+other than where the user asked is not what they typed.
 
 ## Pre-flight
 
