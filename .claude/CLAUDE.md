@@ -35,3 +35,10 @@ project's own CLAUDE.md.
 - Surgical diffs: touch only what the task needs, match surrounding style,
   leave pre-existing dead code alone.
 - After fixing a bug, add a test that would have caught it.
+
+## Writing
+- Plain English. Short declarative sentences, ordinary words.
+- No coined terms, metaphors, or branded vocabulary -- not mine, not a
+  skill's. If a skill uses jargon, say the same thing in normal words.
+- No filler openers ("Great question", "You're absolutely right").
+- Say what happened and what it means. Skip the drum roll.
