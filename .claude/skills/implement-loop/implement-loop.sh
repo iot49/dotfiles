@@ -70,19 +70,33 @@ exec > >(tee -a "$LOG") 2>&1
 die() { echo "ABORT: $*" >&2; exit 1; }
 say() { echo; echo "== $*"; }
 
+# `docker sandbox run` attaches the agent to a terminal, and a backgrounded run
+# has none (it cannot put a pty into raw mode from a background process group).
+# Create — or reuse — the workspace sandbox detached, then `docker exec` into
+# it: same container, same credentials, no terminal required.
+SBX=""
+sandbox_id() {
+  [ -n "$SBX" ] || SBX=$(docker sandbox run -d claude 2>/dev/null | tail -1)
+  [ -n "$SBX" ] || die "could not create a sandbox for $PWD"
+  echo "$SBX"
+}
+sandbox_claude() { # sandbox_claude <claude args...>
+  docker exec -u agent -w "$PWD" "$(sandbox_id)" claude "$@" < /dev/null
+}
+
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
 
 # Run a cold claude in the sandbox. Prints the raw stdout (JSON expected).
 sb() { # sb <promptfile>
-  docker sandbox run claude --dangerously-skip-permissions \
+  sandbox_claude --dangerously-skip-permissions \
     ${IL_EXTRA_ARGS:-} -p "$(cat "$1")" --output-format json
 }
 
 # Resume a session in the sandbox (the repair round).
 sb_resume() { # sb_resume <session_id> <promptfile>
-  docker sandbox run claude --dangerously-skip-permissions \
+  sandbox_claude --dangerously-skip-permissions \
     ${IL_EXTRA_ARGS:-} -p --resume "$1" "$(cat "$2")" --output-format json
 }
 
@@ -92,14 +106,18 @@ jget() { # jget <field>
 import json, sys
 field = sys.argv[1]
 raw = sys.stdin.read()
-# docker may prepend setup noise; parse from the first "{" that yields JSON
+# docker wraps the JSON in setup noise on both sides, so decode the first
+# complete object that carries the field and ignore whatever trails it
+dec = json.JSONDecoder()
 for i, ch in enumerate(raw):
     if ch == "{":
         try:
-            print(json.loads(raw[i:]).get(field, ""))
-            sys.exit(0)
+            obj, _ = dec.raw_decode(raw, i)
         except Exception:
             continue
+        if isinstance(obj, dict) and field in obj:
+            print(obj.get(field, ""))
+            sys.exit(0)
 print("")
 ' "$1"
 }
@@ -141,7 +159,7 @@ judge() { # judge <what the text is> <textfile> <verdictfile>
     cat "$text"
     echo "</text>"
   } > "$P"
-  docker sandbox run claude --dangerously-skip-permissions --tools "" \
+  sandbox_claude --dangerously-skip-permissions --tools "" \
     ${IL_EXTRA_ARGS:-} -p "$(cat "$P")" --output-format json | jget result > "$out"
   head -3 "$out" | grep -q "VERDICT: SAFE"
 }
@@ -187,7 +205,7 @@ RULES=$(gh api "repos/$REPO/rules/branches/$DEFAULT" --jq '.[].type' 2>/dev/null
 echo "$RULES" | grep -qx pull_request \
   && echo "$RULES" | grep -qx required_status_checks \
   || die "$DEFAULT is not protected (pull_request + required_status_checks) — run implement-loop-setup.sh"
-[ "$(gh repo view --json autoMergeAllowed --jq .autoMergeAllowed)" = true ] \
+[ "$(gh api "repos/$REPO" --jq .allow_auto_merge)" = true ] \
   || die "auto-merge is not enabled on $REPO — run implement-loop-setup.sh"
 git cat-file -e HEAD:.github/workflows/ci.yml 2>/dev/null \
   || die "no .github/workflows/ci.yml — run implement-loop-setup.sh"
@@ -206,7 +224,7 @@ TO=""
 command -v timeout  >/dev/null && TO="timeout 180"
 command -v gtimeout >/dev/null && TO="gtimeout 180"
 echo "Reply with exactly: OK" > "$WORKDIR/smoke.md"
-SMOKE=$($TO docker sandbox run claude --dangerously-skip-permissions -p "$(cat "$WORKDIR/smoke.md")" --output-format json 2>&1)
+SMOKE=$($TO docker exec -u agent -w "$PWD" "$(sandbox_id)" claude --dangerously-skip-permissions -p "$(cat "$WORKDIR/smoke.md")" --output-format json < /dev/null 2>&1)
 echo "$SMOKE" | jget result | grep -q "OK" \
   || die "sandbox smoke test failed — run 'docker sandbox run claude' once interactively to authenticate. Output: $SMOKE"
 
