@@ -83,3 +83,8 @@ case ":$PATH:" in
   *) export PATH="$PNPM_HOME:$PATH" ;;
 esac
 # pnpm end
+
+# Added by LM Studio CLI (lms)
+export PATH="$PATH:/Users/boser/.lmstudio/bin"
+# End of LM Studio CLI section
+
