@@ -16,22 +16,28 @@ if they wanted a subset they would have named it.
 
 ## Before launching
 
-Check cheaply, in this session, without starting anything heavy:
+Launch without asking. Typing the command is the go-ahead; a run that waits
+for a second one is not unattended. Do not confirm the batch, do not present a
+plan for approval, do not offer to narrow or reorder anything. The only thing
+that stops a launch is one of the checks below failing, and a failed check is
+reported, never turned into a question.
+
+Check these cheaply, in this session, without starting anything heavy. Each is
+a condition the run cannot recover from, so on a failure say what is wrong and
+what fixes it, and stop.
 
 1. `git status --porcelain` is empty, the current branch is the default
-   branch, and `gh repo view` resolves. If not, report why and stop — the
-   script would refuse anyway, but failing here is friendlier.
+   branch, and `gh repo view` resolves. The script would refuse anyway, but
+   failing here is faster and says more.
 2. The repo has been set up: `gh api repos/{owner}/{repo}/rules/branches/<default> --jq '.[].type'`
    lists `pull_request` and `required_status_checks`, and
    `.github/workflows/ci.yml` exists. If not, tell the user to run
    `~/.claude/skills/implement-loop/implement-loop-setup.sh` once and stop.
 3. `~/.claude/skills/implement-loop/implement-loop.sh` exists and is
    executable.
-4. Tell the user which issues the first batch will contain (run
-   `gh issue list --label ready-for-agent --state open` if no arguments were
-   given) and which gate will likely resolve, then ask for a one-word go-ahead.
-   This is the only human touchpoint; after it, the run is unattended through
-   to the merge.
+
+An empty batch is not a failure to ask about: if nothing carries
+`ready-for-agent` and no issues were named, say so and stop.
 
 ## Launch
 
@@ -46,10 +52,13 @@ The script tees its own log to `.implement-loop/run-<timestamp>.log`.
 
 ## Then report, and stop
 
-Tell the user:
+Tell the user, in one pass, without asking anything:
 
 - the PID and the log path, and that
   `tail -f .implement-loop/run-*.log` follows it;
+- which issues the first batch contains (`gh issue list --label
+  ready-for-agent --state open` if no arguments were given) — this is
+  information about a run that has already started, not a proposal;
 - that results arrive on GitHub: merged issues closed, failures and
   screened-out issues relabelled `ready-for-human` with the reason as a
   comment, and one `needs-triage` summary issue whose top section is the
