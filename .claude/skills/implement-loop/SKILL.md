@@ -50,6 +50,10 @@ echo $!
 
 The script tees its own log to `.implement-loop/run-<timestamp>.log`.
 
+On startup it prunes per-run artifacts in `.implement-loop/` older than
+`IL_KEEP_DAYS` (default 14). `rulings.md` is never pruned; what happened to an
+issue lives in the issue and its PR.
+
 ## Then report, and stop
 
 Tell the user, in one pass, without asking anything:

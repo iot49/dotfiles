@@ -25,6 +25,19 @@
 #   land on the batch branch, or reset to $pre. A flagged note is cut and the
 #   work still stands or falls on the gate; only a flagged issue body, which
 #   an outsider may have written, stops the issue before anything runs.
+#
+# Audit rule: the audit reports, it does not veto. Every verdict but CLEAN is
+# recorded on the issue and in the summary, RISK more loudly than SCOPE, and
+# the work lands either way. What holds a PR for a human is the deterministic
+# hold check — CI, the gate, dependency manifests, deleted tests — which needs
+# no judgement and covers the changes with real blast radius.
+#
+# The veto was removed after it reset three issues' worth of gate-green,
+# verified work. Every finding a human then read was either correct work or a
+# defect in the issue that had ordered it: #289 had to widen a guard the issue
+# required widening, and #299 was flagged for a one-line allowlist rename that
+# the issue's own directory move forced. The audit is also told to read
+# CLAUDE.md, so work the repo's conventions require is not scored as extra.
 # After the batch:
 #   one review over the whole range -> hold check (protected paths, deleted
 #   tests) -> push branch, open PR -> auto-merge on CI green, wait -> close
@@ -46,6 +59,7 @@
 #   IL_PROTECTED    space-separated globs whose change holds the PR
 #   IL_CI_TIMEOUT   seconds to wait for CI + merge (default 1800)
 #   IL_ONCE         set to stop after one batch even with no arguments
+#   IL_KEEP_DAYS    days of per-run artifacts to keep (default 14, 0 disables)
 
 set -u  # not -e: one failing issue must not kill the batch; errors are handled
 
@@ -57,11 +71,26 @@ TS=$(date +%Y%m%d-%H%M%S)
 LOG="$WORKDIR/run-$TS.log"
 RULINGS="$WORKDIR/rulings.md"
 FAILED="$WORKDIR/failed-$TS.txt"     # issues that did not land (failed or skipped)
+REVIEW="$WORKDIR/review-$TS.md"      # per run: $WORKDIR survives, and a batch
+                                     # that landed nothing runs no review. On a
+                                     # fixed name the report then printed the
+                                     # previous batch's review under this
+                                     # batch's range (#274).
 BRANCH="implement-loop/$TS"
 CI_TIMEOUT=${IL_CI_TIMEOUT:-1800}
 PROTECTED=${IL_PROTECTED:-".github/** scripts/check.sh Makefile package.json pnpm-lock.yaml package-lock.json yarn.lock pyproject.toml uv.lock requirements*.txt Cargo.toml Cargo.lock go.mod go.sum"}
 
 mkdir -p "$WORKDIR"
+# Prune the per-run artifacts. Prompts, diffs, gate output and judge results
+# are scratch: what happened to an issue is in the issue and its PR, and a
+# run left ~740 files and 8.6 MB behind in six days. `rulings.md` is not
+# per-run — later batches are handed it — so it never expires, and nothing
+# below $WORKDIR's top level is touched.
+KEEP_DAYS=${IL_KEEP_DAYS:-14}
+if [ "$KEEP_DAYS" -gt 0 ] 2>/dev/null; then
+  find "$WORKDIR" -maxdepth 1 -type f -mtime +"$KEEP_DAYS" \
+    ! -name rulings.md -delete 2>/dev/null
+fi
 touch "$FAILED"
 # keep the workdir out of git without touching .gitignore; also makes
 # `git clean -fd` (no -x) leave it alone
@@ -72,6 +101,14 @@ exec > >(tee -a "$LOG") 2>&1
 
 die() { echo "ABORT: $*" >&2; exit 1; }
 say() { echo; echo "== $*"; }
+
+# Hand an issue back to a human. Swallowing a failure here leaves the issue
+# labelled ready-for-agent, so the next run picks up exactly what this one
+# rejected — which is how #236 was re-offered after being handed back.
+hand_back() { # hand_back <issue>
+  gh issue edit "$1" --remove-label ready-for-agent --add-label ready-for-human \
+    || say "issue #$1: could NOT swap ready-for-agent for ready-for-human — do it by hand"
+}
 
 # `docker sandbox run` attaches the agent to a terminal, and a backgrounded run
 # has none (it cannot put a pty into raw mode from a background process group).
@@ -164,7 +201,29 @@ judge() { # judge <what the text is> <textfile> <verdictfile>
   } > "$P"
   sandbox_claude --dangerously-skip-permissions --tools "" \
     ${IL_EXTRA_ARGS:-} -p "$(cat "$P")" --output-format json | jget result > "$out"
-  head -3 "$out" | grep -q "VERDICT: SAFE"
+  head -3 "$out" | grep -q "VERDICT: SAFE" && return 0
+  head -3 "$out" | grep -q "VERDICT: SUSPECT" && return 1
+  # Neither verdict: the model never answered. Out of quota, a transport
+  # failure or a dead sandbox all read as "not SAFE" here, and marching on
+  # hands back good issues as manipulative and skips everything that depends
+  # on them. A stopped run costs one restart; a mislabelled backlog costs a
+  # morning. Stop, and leave every label as it was.
+  die "the screening judge returned no verdict for $text. The model did not
+answer, so nothing was screened and nothing was decided. Labels are untouched;
+re-run when it can answer again. It said:
+$(head -3 "$out")"
+}
+
+# The same rule for a step that answers with a verdict: a reply with no
+# VERDICT line at all is an outage, not a judgement.
+answered_or_die() { # answered_or_die <what> <reply>
+  case "$2" in
+    *"VERDICT:"*) return 0 ;;
+  esac
+  die "$1 returned no verdict. The model did not answer, so nothing was
+judged. The work so far is on the branch and no label was changed; re-run when
+it can answer again. It said:
+$(echo "$2" | head -3)"
 }
 
 resolve_gate() {
@@ -300,9 +359,15 @@ say "plan: $ORDER"
 [ -n "$PRESKIP" ] && say "pre-skipped (open blocker outside batch): $PRESKIP"
 [ -n "${ORDER// /}" ] || die "nothing runnable after dependency resolution"
 
-touch "$RULINGS"
+# Truncate, do not touch: the prompt below tells the agent "the batch has
+# already ruled on these" and gives a ruling authority over its issue body, so
+# a file that accumulates across runs pins one batch's workarounds as standing
+# precedent for every later one. #236 died on rulings carried over this way.
+: > "$RULINGS"
 LANDED=""          # "NN:presha:postsha ..."
 DROPPED=""         # landed, but the screen flagged its notes and they were cut
+SCOPE=""           # landed and closed, with an audit note about extra work
+RISKY=""           # of those, the ones the audit rated RISK rather than SCOPE
 
 # ---------------------------------------------------------------------------
 # per issue
@@ -334,11 +399,14 @@ for NN in $ORDER; do
 
   # ---- an unreadable issue is an aborted run, not a puzzle for the agent to
   # solve by improvising: with no body it goes looking for one elsewhere -----
-  if [ -z "$(gh issue view "$NN" --json body --jq .body | tr -d '[:space:]')" ]; then
-    say "issue #$NN: empty body, not attempted"
+  # Test the file, not just the API: the fetch above can print nothing and
+  # still exit 0, and the file is what the agent and the screening judge read.
+  if [ ! -s "$WORKDIR/issue-$NN.md" ] \
+     || [ -z "$(gh issue view "$NN" --json body --jq .body | tr -d '[:space:]')" ]; then
+    say "issue #$NN: no issue text, not attempted"
     echo "$NN" >> "$FAILED"
-    gh issue comment "$NN" --body "implement-loop: not attempted — the issue body is empty, so there is nothing to implement from. Write the body, then put \`ready-for-agent\` back." || true
-    gh issue edit "$NN" --remove-label ready-for-agent --add-label ready-for-human 2>/dev/null || true
+    gh issue comment "$NN" --body "implement-loop: not attempted — the issue text came through empty, so there was nothing to implement from. Check the body is written, then put \`ready-for-agent\` back." || true
+    hand_back "$NN"
     continue
   fi
 
@@ -348,7 +416,7 @@ for NN in $ORDER; do
     say "issue #$NN: flagged by the screen, not attempted"
     echo "$NN" >> "$FAILED"
     gh issue comment "$NN" --body "$(printf 'implement-loop: not attempted — the screening judge flagged the issue text as possibly manipulative. Nothing ran.\n\n```\n%s\n```' "$(cat "$WORKDIR/judge-issue-$NN.txt")")" || true
-    gh issue edit "$NN" --remove-label ready-for-agent --add-label ready-for-human 2>/dev/null || true
+    hand_back "$NN"
     continue
   fi
 
@@ -449,7 +517,11 @@ for NN in $ORDER; do
   }
 
   # ---- gate, then verify --------------------------------------------------
-  check_issue() { # -> 0 ok; 1 fail; failure text in $WORKDIR/failure-$NN.txt
+  # -> 0 ok; 1 fail, failure text in $WORKDIR/failure-$NN.txt. On 0 it may set
+  # SCOPE_THIS=1: the work is sound and lands, but the audit found more than
+  # the issue asked for, and a human is told after the fact.
+  check_issue() {
+    SCOPE_THIS=""
     if ! run_gate "$WORKDIR/gate-$NN.txt"; then
       { echo "The gate (\`$GATE\`) failed on your work:"; echo; tail -60 "$WORKDIR/gate-$NN.txt"; } \
         > "$WORKDIR/failure-$NN.txt"
@@ -478,6 +550,7 @@ for NN in $ORDER; do
     } > "$V"
     VOUT=$(sb "$V" | jget result)
     echo "$VOUT" > "$WORKDIR/verify-$NN.txt"
+    answered_or_die "the verify step for #$NN" "$VOUT"
     if ! echo "$VOUT" | head -3 | grep -q "VERDICT: PASS"; then
       { echo "An independent check read your diff against the issue body and failed it:"; echo; echo "$VOUT"; } \
         > "$WORKDIR/failure-$NN.txt"
@@ -493,23 +566,64 @@ for NN in $ORDER; do
       echo "$WORKDIR/issue-$NN.md; the change is $WORKDIR/diff-$NN.patch."
       echo
       echo "List every behaviour the diff introduces that the issue did NOT"
-      echo "ask for. Look hardest for: network calls or new endpoints, file or"
-      echo "process access outside the feature, new or changed dependencies,"
-      echo "edits to CI, config, build, or test files, encoded or obfuscated"
-      echo "strings, disabled checks, changes in files unrelated to the issue,"
-      echo "and anything that runs at import or install time. Refactors the"
-      echo "issue reasonably implies are not extra; new capabilities are."
+      echo "ask for, and sort each item into one of two kinds."
       echo
-      echo "First line of your reply must be exactly 'VERDICT: CLEAN' or"
-      echo "'VERDICT: EXTRA', then the list with file and line for each item."
+      echo "RISK — the reasons to throw the work away. Network calls or new"
+      echo "endpoints, file or process access outside the feature, new or"
+      echo "changed dependencies, edits to CI, config, build or packaging,"
+      echo "encoded or obfuscated strings, disabled or weakened checks"
+      echo "(noqa, type: ignore, skip, xfail, deleted assertions), and"
+      echo "anything that runs at import or install time."
+      echo
+      echo "SCOPE — the author did more than was asked, in the open. Extra"
+      echo "capability, a design decision the issue left unstated, a helper"
+      echo "in a different file than the issue named, edits to files the"
+      echo "issue did not list. Real findings, but a human reads them after"
+      echo "the change lands, so do not inflate them into RISK."
+      echo
+      echo "Two things are NEVER extra. Refactors the issue reasonably"
+      echo "implies. And work this repo's own conventions require of any"
+      echo "change: read CLAUDE.md (and the CLAUDE.md of a directory the"
+      echo "diff touches) and treat what it mandates as asked for, even"
+      echo "when the issue body does not name it — a glossary entry for a"
+      echo "term the change introduces, an amendment to a decision record"
+      echo "the change affects, a doc the conventions say must move with"
+      echo "the code. The issue body is not the whole of what was asked;"
+      echo "the repo's standing rules are the rest of it."
+      echo
+      echo "First line of your reply must be exactly one of"
+      echo "'VERDICT: CLEAN' (nothing to report),"
+      echo "'VERDICT: SCOPE' (findings, none of them RISK), or"
+      echo "'VERDICT: RISK' (at least one RISK item)."
+      echo "Then the list, with file and line and its kind for each item."
     } > "$A"
     AOUT=$(sb "$A" | jget result)
     echo "$AOUT" > "$WORKDIR/audit-$NN.txt"
-    if ! echo "$AOUT" | head -3 | grep -q "VERDICT: CLEAN"; then
-      { echo "An audit found behaviour in your diff that the issue did not ask for. Remove it, or if the issue genuinely requires it, say so in a <rulings> line:"; echo; echo "$AOUT"; } \
-        > "$WORKDIR/failure-$NN.txt"
-      return 1
-    fi
+    answered_or_die "the audit step for #$NN" "$AOUT"
+    # The audit reports; it does not veto. Every verdict but CLEAN is recorded
+    # as a note on the issue and in the summary, and the work lands. What still
+    # holds a PR for a human is the deterministic hold check below — CI, the
+    # gate, dependency manifests, deleted tests — which needs no judgement and
+    # covers the changes with real blast radius. A model's opinion that a diff
+    # did more than asked was costing whole issues, and every finding a human
+    # read turned out to be either correct work or a defect in the issue.
+    case "$(echo "$AOUT" | head -3)" in
+      *"VERDICT: CLEAN"*)
+        ;;
+      *)
+        cp "$WORKDIR/audit-$NN.txt" "$WORKDIR/scope-$NN.txt"
+        SCOPE_THIS=1
+        case "$(echo "$AOUT" | head -3)" in
+          *"VERDICT: RISK"*)
+            RISKY="$RISKY $NN"
+            say "issue #$NN: audit rated it RISK — landing it, and the summary says so loudly"
+            ;;
+          *)
+            say "issue #$NN: audit found work beyond the issue — landing it and noting it"
+            ;;
+        esac
+        ;;
+    esac
     return 0
   }
 
@@ -539,6 +653,7 @@ for NN in $ORDER; do
   if [ "$OK" = 1 ]; then
     POST=$(git rev-parse HEAD)
     LANDED="$LANDED $NN:$PRE:$POST"
+    [ -n "$SCOPE_THIS" ] && SCOPE="$SCOPE $NN"
     if [ -n "$NOTES_FLAGGED" ]; then
       : > "$WORKDIR/handoff-$NN.txt"
       DROPPED="$DROPPED $NN"
@@ -556,7 +671,7 @@ for NN in $ORDER; do
     git clean -fd     # untracked only; $WORKDIR is ignored and survives
     echo "$NN" >> "$FAILED"
     gh issue comment "$NN" --body "$(printf 'implement-loop: failed. Work was reset; nothing landed.\n\n```\n%s\n```' "$(tail -40 "$WORKDIR/failure-$NN.txt")")" || true
-    gh issue edit "$NN" --remove-label ready-for-agent --add-label ready-for-human 2>/dev/null || true
+    hand_back "$NN"
   fi
 done
 
@@ -581,7 +696,7 @@ if [ -n "${LANDED// /}" ]; then
     echo "  \`git log $START_SHA..HEAD\`; the issue bodies are pre-fetched at"
     echo "  $WORKDIR/issue-<n>.md. \`gh\` and the network are NOT available."
     echo
-    echo "Write the full report to $WORKDIR/review.md."
+    echo "Write the full report to $REVIEW."
     echo
     echo "End your reply with exactly this block: the numbers of issues with a"
     echo "requirement that was NOT met, space separated, or empty:"
@@ -589,7 +704,7 @@ if [ -n "${LANDED// /}" ]; then
   } > "$RV"
   RVOUT=$(sb "$RV" | jget result)
   SPEC_FAILS=$(echo "$RVOUT" | extract_tag spec-failures)
-  [ -f "$WORKDIR/review.md" ] || echo "$RVOUT" > "$WORKDIR/review.md"
+  [ -f "$REVIEW" ] || echo "$RVOUT" > "$REVIEW"
   say "spec failures: '${SPEC_FAILS:-none}'"
 fi
 
@@ -646,6 +761,7 @@ if [ -n "${LANDED// /}" ]; then
         echo "- #$NN: \`$PRE..$POST\`"
       done
       [ -n "${SPEC_FAILS// /}" ] && { echo; echo "Spec findings (issue stays open): $SPEC_FAILS"; }
+      [ -n "${SCOPE// /}" ] && { echo; echo "Audit scope findings (recorded on each issue, nothing held): $SCOPE"; }
       [ -n "$HOLD" ] && { echo; echo "**HELD for a human** — the diff touches: $HOLD"; }
       echo
       echo "Issues are closed by the loop after the merge, not by this PR."
@@ -695,10 +811,17 @@ for entry in $LANDED; do
   NN=${entry%%:*}; rest=${entry#*:}; PRE=${rest%%:*}; POST=${rest##*:}
   if [ "$LANDING" != merged ]; then
     gh issue comment "$NN" --body "$(printf 'implement-loop: implemented as %s..%s in %s, which did not merge (%s). Leaving this open.' "$PRE" "$POST" "${PR_URL:-branch $BRANCH (local only)}" "$LANDING")" || true
-    gh issue edit "$NN" --remove-label ready-for-agent --add-label ready-for-human 2>/dev/null || true
+    hand_back "$NN"
   elif echo " $SPEC_FAILS " | grep -q " $NN "; then
     gh issue comment "$NN" --body "$(printf 'implement-loop: commits %s..%s merged via %s, but the final review found a requirement not met — see the summary issue. Leaving this open.' "$PRE" "$POST" "$PR_URL")" || true
-    gh issue edit "$NN" --remove-label ready-for-agent --add-label ready-for-human 2>/dev/null || true
+    hand_back "$NN"
+  elif echo " $SCOPE " | grep -q " $NN "; then
+    # A scope finding is a note, not a gate. The code merged either way, so
+    # holding the issue open never protected anything — it only stalled the
+    # issues that depend on this one. The findings go on the closed issue and
+    # into the summary, to be read when someone wants to, not before the
+    # backlog can move.
+    gh issue close "$NN" --comment "$(printf 'implement-loop: landed as %s..%s via %s. The audit found work the issue did not ask for. The audit reports rather than blocks, so it landed. Closing — the findings are below if you want to revisit them.\n\n```\n%s\n```' "$PRE" "$POST" "$PR_URL" "$(tail -60 "$WORKDIR/scope-$NN.txt")")" || true
   else
     gh issue close "$NN" --comment "implement-loop: landed as $PRE..$POST via $PR_URL." || true
   fi
@@ -723,13 +846,20 @@ BODY="$WORKDIR/summary-$TS.md"
   for n in $SPEC_FAILS; do
     echo "- #$n merged but a requirement was **not met** — it is back on \`ready-for-human\`. See the review below."
   done
+  for n in $RISKY; do
+    echo "- #$n merged and closed, and the audit rated it **RISK** — a network call, a dependency, a disabled check or something else in that class. It landed because the audit reports rather than blocks. Nothing with real blast radius gets here silently: CI, the gate, dependency manifests and deleted tests still hold the PR. Read this one: \`$WORKDIR/scope-$n.txt\`."
+  done
+  for n in $SCOPE; do
+    echo " $RISKY " | grep -q " $n " && continue
+    echo "- #$n merged and closed, with an audit note — work the issue did not ask for. Nothing is blocked on you. Worth reading when convenient: \`$WORKDIR/scope-$n.txt\`. What it usually means is that the issue was underspecified where the agent had to decide."
+  done
   while read -r n; do
     [ -n "$n" ] && echo "- #$n did not land — see its issue comment for the reason (\`ready-for-human\`)."
   done < <(sort -un "$FAILED")
   for n in $DROPPED; do
     echo "- #$n landed, but the screen flagged its \`<handoff>\`/\`<rulings>\` notes, so they were **cut** and no later agent saw them. Read \`$WORKDIR/judge-result-$n*.txt\` — either the note was fair and something about this repo needs fixing, or the agent was captured and the diff wants a second look."
   done
-  [ -z "${SPEC_FAILS// /}" ] && [ -z "${DROPPED// /}" ] && [ ! -s "$FAILED" ] && [ "$LANDING" = merged ] \
+  [ -z "${SPEC_FAILS// /}" ] && [ -z "${SCOPE// /}" ] && [ -z "${DROPPED// /}" ] && [ ! -s "$FAILED" ] && [ "$LANDING" = merged ] \
     && echo "- Nothing. Everything landed, merged via $PR_URL, and is closed."
   echo
   echo "## What landed"
@@ -747,10 +877,10 @@ BODY="$WORKDIR/summary-$TS.md"
     echo "## Rulings this batch made"
     sed 's/^/- /' "$RULINGS"
   fi
-  if [ -f "$WORKDIR/review.md" ]; then
+  if [ -f "$REVIEW" ]; then
     echo
     echo "## Final review ($START_SHA...HEAD)"
-    cat "$WORKDIR/review.md"
+    cat "$REVIEW"
   fi
   echo
   echo "_Log: \`$LOG\` (local, not committed)._"
