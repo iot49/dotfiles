@@ -79,6 +79,8 @@ REVIEW="$WORKDIR/review-$TS.md"      # per run: $WORKDIR survives, and a batch
 BRANCH="implement-loop/$TS"
 CI_TIMEOUT=${IL_CI_TIMEOUT:-1800}
 PROTECTED=${IL_PROTECTED:-".github/** scripts/check.sh Makefile package.json pnpm-lock.yaml package-lock.json yarn.lock pyproject.toml uv.lock requirements*.txt Cargo.toml Cargo.lock go.mod go.sum"}
+PR_URL=""            # opened by the first issue that lands; the landing block reuses it
+LANDED=""            # "<issue>:<pre>:<post>" per landed issue, in order
 
 mkdir -p "$WORKDIR"
 # Prune the per-run artifacts. Prompts, diffs, gate output and judge results
@@ -110,6 +112,48 @@ hand_back() { # hand_back <issue>
     || say "issue #$1: could NOT swap ready-for-agent for ready-for-human — do it by hand"
 }
 
+# Get the work onto the remote as each issue lands, and the PR open from the
+# first one. A run stops for many reasons — a spent quota, a failing step, a
+# person with Ctrl-C — and until this existed every one of them left a batch in
+# a local branch that the next run does not look at, so the whole thing had to
+# be reassembled by hand before anything could merge. Force-with-lease because
+# a later issue that fails resets the branch under us; nobody else pushes here.
+#
+# The PR is a draft while the run is going, and its body lists only what has
+# actually been audited. The branch tip can be ahead of that list — an issue in
+# flight commits before it is judged — so the list, not the tip, is what a
+# person should trust. `git reset --hard` on a failure brings the two back
+# together.
+mirror_branch() { # mirror_branch — call after LANDED has grown
+  local entry nn pre post
+  if ! git push -q --force-with-lease -u origin "$BRANCH" 2>/dev/null; then
+    say "could not push $BRANCH — the work is still only local"
+    return 1
+  fi
+  {
+    echo "Opened by implement-loop $TS while the batch was still running."
+    echo
+    echo "Each issue below passed \`$GATE\` and a cold-agent audit. An issue the"
+    echo "run was working when it stopped is **not** listed, and its commits, if"
+    echo "any, are unjudged — so trust this list rather than the branch tip."
+    echo
+    for entry in $LANDED; do
+      nn=${entry%%:*}; post=${entry##*:}; pre=${entry#*:}; pre=${pre%%:*}
+      echo "- #$nn: \`$pre..$post\`"
+    done
+  } > "$WORKDIR/pr-body.md"
+  if [ -z "$PR_URL" ]; then
+    PR_URL=$(gh pr create --draft --base "$DEFAULT" --head "$BRANCH" \
+      --title "implement-loop $TS (running)" \
+      --body-file "$WORKDIR/pr-body.md") || PR_URL=""
+    say "draft PR: ${PR_URL:-(could not open one; the branch is pushed)}"
+  else
+    gh pr edit "$PR_URL" --body-file "$WORKDIR/pr-body.md" >/dev/null 2>&1 \
+      || say "could not update the PR body"
+  fi
+  return 0
+}
+
 # `docker sandbox run` attaches the agent to a terminal, and a backgrounded run
 # has none (it cannot put a pty into raw mode from a background process group).
 # Create — or reuse — the workspace sandbox detached, then `docker exec` into
@@ -128,15 +172,88 @@ sandbox_claude() { # sandbox_claude <claude args...>
 # helpers
 # ---------------------------------------------------------------------------
 
+# Running out of units stops whoever started this run as well, so the recovery
+# has to live here: a sleep and a retry cost nothing and need nobody watching.
+# The reply that says the units are gone also says when they come back
+# ("You've hit your session limit · resets 9:40pm (UTC)"), which is the only
+# signal there is — no command reports what is left, and what an issue will
+# spend cannot be known before it runs. So this reacts; it does not predict.
+LIMIT_WAITS=${IL_LIMIT_WAITS:-2}   # 0 disables waiting and restores the old abort
+
+# Both phrases, so an agent that merely writes the words "session limit" in a
+# report is not mistaken for the CLI refusing to answer.
+is_limit() { # is_limit <text>
+  case "$1" in
+    *"limit"*) ;;
+    *) return 1 ;;
+  esac
+  case "$1" in
+    *"resets"*) return 0 ;;
+  esac
+  return 1
+}
+
+# Seconds until the reset the reply names, plus a margin. Prints 0 when the
+# time cannot be read or is not stated in UTC — the caller then gives up rather
+# than sleeping on a guess. Capped, so a weekly limit cannot park the machine
+# for days.
+seconds_to_reset() { # seconds_to_reset <text>
+  printf '%s' "$1" | python3 -c '
+import datetime, re, sys
+text = sys.stdin.read()
+if "UTC" not in text:            # a zone we cannot resolve is not worth guessing
+    print(0); raise SystemExit
+m = re.search(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", text, re.I)
+if not m:
+    print(0); raise SystemExit
+hour = int(m.group(1)); minute = int(m.group(2) or 0); half = (m.group(3) or "").lower()
+if half == "pm" and hour != 12: hour += 12
+if half == "am" and hour == 12: hour = 0
+if hour > 23: print(0); raise SystemExit
+now = datetime.datetime.now(datetime.timezone.utc)
+target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+if target <= now: target += datetime.timedelta(days=1)
+wait = int((target - now).total_seconds()) + 120
+# A session window is about five hours, so a longer wait than that means the
+# time was misread. Sleeping on a misreading is worse than not sleeping: 0
+# gives back the old behaviour, which is to stop and let a person look.
+print(wait if wait <= 6 * 3600 else 0)
+' 2>/dev/null || echo 0
+}
+
+# Run one sandboxed claude, waiting out a spent quota rather than returning a
+# reply with no verdict in it. Logging goes to stderr: stdout is the JSON the
+# caller is capturing.
+sb_run() { # sb_run <command...>
+  local out waits=0 nap
+  while :; do
+    out=$("$@")
+    is_limit "$out" || { printf '%s' "$out"; return 0; }
+    if [ "$waits" -ge "$LIMIT_WAITS" ]; then
+      echo "== units ran out again after $waits wait(s) — letting the run stop" >&2
+      printf '%s' "$out"; return 0
+    fi
+    nap=$(seconds_to_reset "$out")
+    case "$nap" in ''|*[!0-9]*) nap=0 ;; esac
+    if [ "$nap" -le 0 ]; then
+      echo "== units ran out and the reply names no reset time — not waiting" >&2
+      printf '%s' "$out"; return 0
+    fi
+    waits=$((waits + 1))
+    echo "== units ran out; sleeping ${nap}s until the reset, then retrying this step (wait $waits of $LIMIT_WAITS)" >&2
+    sleep "$nap"
+  done
+}
+
 # Run a cold claude in the sandbox. Prints the raw stdout (JSON expected).
 sb() { # sb <promptfile>
-  sandbox_claude --dangerously-skip-permissions \
+  sb_run sandbox_claude --dangerously-skip-permissions \
     ${IL_EXTRA_ARGS:-} -p "$(cat "$1")" --output-format json
 }
 
 # Resume a session in the sandbox (the repair round).
 sb_resume() { # sb_resume <session_id> <promptfile>
-  sandbox_claude --dangerously-skip-permissions \
+  sb_run sandbox_claude --dangerously-skip-permissions \
     ${IL_EXTRA_ARGS:-} -p --resume "$1" "$(cat "$2")" --output-format json
 }
 
@@ -664,6 +781,9 @@ for NN in $ORDER; do
       [ -n "$RUL" ] && echo "$RUL" >> "$RULINGS"
       say "issue #$NN landed ($PRE..$POST)"
     fi
+    # onto the remote now, not at the end of the batch: whatever stops this run
+    # should not also decide whether the work survives it
+    mirror_branch
   else
     # ---- give up: leave the morning's triage already done -------------------
     say "issue #$NN: giving up, resetting to $PRE"
@@ -746,10 +866,9 @@ fi
 # land: push the branch, open the PR, auto-merge on CI green, wait
 # ---------------------------------------------------------------------------
 LANDING=nothing     # nothing | merged | held | ci-failed | conflict | timeout | push-failed
-PR_URL=""
 if [ -n "${LANDED// /}" ]; then
   say "push $BRANCH"
-  if ! git push -u origin "$BRANCH"; then
+  if ! git push --force-with-lease -u origin "$BRANCH"; then
     LANDING=push-failed
     say "push failed — commits stay local on $BRANCH"
   else
@@ -766,9 +885,16 @@ if [ -n "${LANDED// /}" ]; then
       echo
       echo "Issues are closed by the loop after the merge, not by this PR."
     } > "$WORKDIR/pr-body.md"
-    PR_URL=$(gh pr create --base "$DEFAULT" --head "$BRANCH" \
-      --title "implement-loop $TS: $(for e in $LANDED; do printf '#%s ' "${e%%:*}"; done)" \
-      --body-file "$WORKDIR/pr-body.md") || PR_URL=""
+    PR_TITLE="implement-loop $TS: $(for e in $LANDED; do printf '#%s ' "${e%%:*}"; done)"
+    if [ -n "$PR_URL" ]; then
+      # a draft has been open since the first issue landed; finish it
+      gh pr edit "$PR_URL" --title "$PR_TITLE" --body-file "$WORKDIR/pr-body.md" \
+        >/dev/null 2>&1 || say "could not update the PR"
+      gh pr ready "$PR_URL" >/dev/null 2>&1 || say "could not take the PR out of draft"
+    else
+      PR_URL=$(gh pr create --base "$DEFAULT" --head "$BRANCH" \
+        --title "$PR_TITLE" --body-file "$WORKDIR/pr-body.md") || PR_URL=""
+    fi
     say "PR: ${PR_URL:-(creation failed)}"
     if [ -z "$PR_URL" ]; then
       LANDING=push-failed
