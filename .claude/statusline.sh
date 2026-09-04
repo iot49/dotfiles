@@ -1,14 +1,16 @@
 #!/bin/bash
-# Claude Code status line: model, context used, hostname, git branch, directory.
+# Claude Code status line: model, context used, rate limits, hostname, branch, directory.
 # Reads the JSON payload Claude Code pipes on stdin.
 
 input=$(cat)
 
-model=$(echo "$input" | jq -r '.model.display_name // .model.id // "unknown model"' 2>/dev/null)
-[ -z "$model" ] || [ "$model" = "null" ] && model="unknown model"
+ask() { echo "$input" | jq -r "$1 // empty" 2>/dev/null; }
 
-dir=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // empty' 2>/dev/null)
-[ -z "$dir" ] || [ "$dir" = "null" ] && dir="$PWD"
+model=$(ask '.model.display_name // .model.id')
+[ -z "$model" ] && model="unknown model"
+
+dir=$(ask '.workspace.current_dir // .cwd')
+[ -z "$dir" ] && dir="$PWD"
 
 branch=$(GIT_OPTIONAL_LOCKS=0 git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
 
@@ -17,9 +19,9 @@ host=$(hostname -s)
 display_dir="${dir/#$HOME/~}"
 
 # Context: tokens used of the window, and the percentage Claude Code computes.
-used=$(echo "$input" | jq -r '.context_window.total_input_tokens // empty' 2>/dev/null)
-max=$(echo "$input" | jq -r '.context_window.context_window_size // empty' 2>/dev/null)
-pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty' 2>/dev/null)
+used=$(ask '.context_window.total_input_tokens')
+max=$(ask '.context_window.context_window_size')
+pct=$(ask '.context_window.used_percentage')
 
 # 213647 -> 214k, 1000000 -> 1.0M
 human() {
@@ -33,11 +35,22 @@ human() {
 ctx=""
 if [ -n "$used" ] && [ -n "$max" ]; then
   ctx="$(human "$used")/$(human "$max")"
-  [ -n "$pct" ] && ctx="$ctx ${pct}%"
+  [ -n "$pct" ] && ctx="$ctx $(printf '%.0f' "$pct")%"
 fi
+
+# Rate limits: the windows this account reports, absent on API-key accounts.
+limits=""
+for window in five_hour:5h seven_day:7d spend_limit:spend; do
+  field=${window%%:*}
+  label=${window##*:}
+  value=$(ask ".rate_limits.${field}.used_percentage")
+  [ -z "$value" ] && continue
+  limits="${limits}${limits:+ }${label} $(printf '%.0f' "$value")%"
+done
 
 parts=("$model")
 [ -n "$ctx" ] && parts+=("$ctx")
+[ -n "$limits" ] && parts+=("$limits")
 parts+=("$host")
 [ -n "$branch" ] && parts+=("$branch")
 parts+=("$display_dir")
