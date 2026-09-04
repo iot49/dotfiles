@@ -1,5 +1,5 @@
 #!/bin/bash
-# Claude Code status line: model, context used, rate limits, hostname, branch, directory.
+# Claude Code status line: model, context used, rate limits, hostname, git branch.
 # Reads the JSON payload Claude Code pipes on stdin.
 
 input=$(cat)
@@ -9,14 +9,13 @@ ask() { echo "$input" | jq -r "$1 // empty" 2>/dev/null; }
 model=$(ask '.model.display_name // .model.id')
 [ -z "$model" ] && model="unknown model"
 
+# The directory is not shown; it locates the repository the branch comes from.
 dir=$(ask '.workspace.current_dir // .cwd')
 [ -z "$dir" ] && dir="$PWD"
 
 branch=$(GIT_OPTIONAL_LOCKS=0 git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
 
 host=$(hostname -s)
-
-display_dir="${dir/#$HOME/~}"
 
 # Context: tokens used of the window, and the percentage Claude Code computes.
 used=$(ask '.context_window.total_input_tokens')
@@ -53,7 +52,6 @@ parts=("$model")
 [ -n "$limits" ] && parts+=("$limits")
 parts+=("$host")
 [ -n "$branch" ] && parts+=("$branch")
-parts+=("$display_dir")
 
 printf '%s' "${parts[0]}"
 for p in "${parts[@]:1}"; do printf ' | %s' "$p"; done
