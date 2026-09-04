@@ -4,7 +4,7 @@ else
   PROMPT_HOST="I7"
 fi
 
-PROMPT="%F{red}${PROMPT_HOST} %F{blue}%2~ %f$ "
+PROMPT="%F{red}${PROMPT_HOST} %F{blue}%2~ %F{green}\${vcs_info_msg_0_}%f$ "
 
 # 1Password SSH Agent integration
 export SSH_AUTH_SOCK="${HOME}/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"

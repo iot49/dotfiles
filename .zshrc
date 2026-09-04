@@ -15,7 +15,7 @@ autoload -Uz vcs_info
 precmd() { vcs_info }
 zstyle ':vcs_info:git:*' formats '%b '
 setopt PROMPT_SUBST
-PROMPT='%F{red}${HOSTNAME} %F{blue}%2~ %f$ '
+PROMPT='%F{red}${HOSTNAME} %F{blue}%2~ %F{green}${vcs_info_msg_0_}%f$ '
 
 # ls
 export CLICOLOR=1
