@@ -66,7 +66,13 @@ set -u  # not -e: one failing issue must not kill the batch; errors are handled
 # ---------------------------------------------------------------------------
 # setup
 # ---------------------------------------------------------------------------
-WORKDIR=".implement-loop"
+# The run's state — prompts, audits, the log, the rulings a later batch is
+# handed — belongs to the checkout rather than to the branch, and the run
+# below works in a worktree under it. So the path is absolute, resolved
+# here while this is still the main checkout, and the name is kept beside
+# it for the one place that wants it relative (`.git/info/exclude`).
+WORKNAME=".implement-loop"
+WORKDIR="$PWD/$WORKNAME"
 TS=$(date +%Y%m%d-%H%M%S)
 LOG="$WORKDIR/run-$TS.log"
 RULINGS="$WORKDIR/rulings.md"
@@ -97,7 +103,7 @@ touch "$FAILED"
 # keep the workdir out of git without touching .gitignore; also makes
 # `git clean -fd` (no -x) leave it alone
 if [ -d .git ]; then
-  grep -qxF "$WORKDIR/" .git/info/exclude 2>/dev/null || echo "$WORKDIR/" >> .git/info/exclude
+  grep -qxF "$WORKNAME/" .git/info/exclude 2>/dev/null || echo "$WORKNAME/" >> .git/info/exclude
 fi
 exec > >(tee -a "$LOG") 2>&1
 
@@ -429,8 +435,27 @@ echo "$SMOKE" | jget result | grep -q "OK" \
   || die "sandbox smoke test failed — run 'docker sandbox run claude' once interactively to authenticate. Output: $SMOKE"
 
 START_SHA=$(git rev-parse HEAD)
-git checkout -q -b "$BRANCH" || die "could not create $BRANCH"
-say "starting at $START_SHA on $BRANCH"
+# A worktree of its own, not a checkout in the tree this was started from. The
+# run and whoever started it share a working tree otherwise, and a person or an
+# agent switching branches in it does not disturb the run — it silently steals
+# it: on 2026-09-05 a session ran `git checkout -B` here between two issues, and
+# the next three issues were committed onto that branch while `$BRANCH` stayed
+# where it was, so the batch's own PR would have gone out without them. A
+# worktree makes that impossible; the main checkout stays on $DEFAULT and
+# nothing this run does is visible in it.
+#
+# Under $WORKDIR, which is already in `.git/info/exclude` and is inside the
+# workspace the sandbox mounted at pre-flight, so `docker exec -w` still points
+# at a path the agent can see. A worktree in /tmp would be outside both. The
+# gate starts cold there — no `.venv`, no `node_modules` — which costs the first
+# gate of a run and nothing after it.
+ROOT=$PWD
+WT="$WORKDIR/tree"
+git worktree remove --force "$WT" 2>/dev/null
+git worktree prune
+git worktree add -q "$WT" -b "$BRANCH" "$START_SHA" || die "could not create $BRANCH as a worktree at $WT"
+cd "$WT" || die "could not enter $WT"
+say "starting at $START_SHA on $BRANCH in $WT"
 
 # ---------------------------------------------------------------------------
 # choose the batch and order it by GitHub's native dependencies
@@ -944,8 +969,10 @@ if [ -n "${LANDED// /}" ]; then
 fi
 say "landing: $LANDING"
 
-# back to the default branch; the batch branch stays around unless it merged
-git checkout -q "$DEFAULT"
+# out of the worktree and back to the main checkout, which never left $DEFAULT.
+# The worktree goes; the batch branch stays around unless it merged.
+cd "$ROOT"
+git worktree remove --force "$WT" 2>/dev/null || say "could not remove the worktree at $WT"
 if [ "$LANDING" = merged ]; then
   git pull --rebase
   git branch -D "$BRANCH" >/dev/null

@@ -67,6 +67,9 @@ Tell the user, in one pass, without asking anything:
   screened-out issues relabelled `ready-for-human` with the reason as a
   comment, and one `needs-triage` summary issue whose top section is the
   action list;
+- that the run works in its own git worktree under `.implement-loop/tree`,
+  so the checkout it was started from stays on the default branch and is
+  free to use while the batch runs;
 - that the batch lands as one PR on a branch, auto-merged when CI is green,
   unless the diff touches protected paths (CI, gate, dependency manifests,
   test deletions) — then the PR is held for a human and the summary issue
