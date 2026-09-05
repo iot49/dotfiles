@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# implement-loop — batch-implement, Ralph-style.
+# implement-loop — unattended batch implementation, Ralph-style.
 #
 # The host (this script) does every side effect: git resets, pushes, gh
 # comments, labels, the PR, the summary issue. Every LLM step runs COLD inside

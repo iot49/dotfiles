@@ -1,15 +1,17 @@
 # implement-loop
 
-Unattended batch implementation of GitHub issues. Successor to
-`batch-implement`, restructured Ralph-style: a bash loop is the orchestrator,
-every LLM step runs in a cold Docker-sandboxed `claude -p`, and all side
-effects (git, gh) stay on the host. Results land on `main` only through a PR
-that CI has passed; the loop never pushes `main` directly.
+Unattended batch implementation of GitHub issues, Ralph-style: a bash loop is
+the orchestrator, every LLM step runs in a cold Docker-sandboxed `claude -p`,
+and all side effects (git, gh) stay on the host. Results land on `main` only
+through a PR that CI has passed; the loop never pushes `main` directly.
 
-Lineage: [batch-implement](../batch-implement/SKILL.md) (gating, handoffs,
-rulings, the give-up path) crossed with
-[Ralph Wiggum](https://www.aihero.dev/tips-for-ai-coding-with-ralph-wiggum)
-(cold context per unit of work, bash as the loop, Docker sandbox).
+It is the only batch skill. An earlier one ran the same batch as a session's
+own subagents and pushed the branch directly; its gating, handoffs, rulings
+and give-up path are kept here, and it was deleted rather than left beside
+this one — two skills for one job is a thing to maintain twice and a thing
+for an agent to pick between. The other half of the lineage is
+[Ralph Wiggum](https://www.aihero.dev/tips-for-ai-coding-with-ralph-wiggum):
+cold context per unit of work, bash as the loop, Docker sandbox.
 
 ## Files
 
@@ -125,8 +127,8 @@ cross between issues are carried explicitly, in files:
 
 **The gate is mechanical, the checks are separated.** The gate's exit code is
 the verdict, no interpretation. The diff-vs-issue-body judgment is made by a
-*different* cold agent than the one that wrote the code — same principle as
-batch-implement's parent-runs-the-gate, kept across the process split.
+*different* cold agent than the one that wrote the code — the parent, not the
+author, decides that work passed, kept across the process split.
 
 **One PR per batch, not per issue.** Failure handling is already per-issue
 (reset before anything is pushed); the PR is the batch's landing, and one CI
