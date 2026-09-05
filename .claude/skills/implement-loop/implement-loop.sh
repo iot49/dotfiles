@@ -101,7 +101,28 @@ if [ -d .git ]; then
 fi
 exec > >(tee -a "$LOG") 2>&1
 
-die() { echo "ABORT: $*" >&2; exit 1; }
+die() {
+  echo "ABORT: $*" >&2
+  # What landed before the stop is on the branch and in the PR already, but
+  # only the per-issue audits have seen it: the whole-range review runs after
+  # the last issue and a stop never reaches it. Say which range is owed one.
+  #
+  # Running it here instead was considered and is not worth the restructure:
+  # the review is another agent call, so the case that stops a batch most
+  # often — the units running out — is exactly the case where it would fail
+  # too. Naming the range costs nothing and covers every kind of stop. Two
+  # batches, 48 commits, reached the default branch unreviewed because
+  # nothing said one was owed (2026-09-04); the review found a defect four
+  # per-issue audits had passed over.
+  if [ -n "${START_SHA:-}" ] && [ -n "${LANDED:-}" ] && [ -n "${LANDED// /}" ]; then
+    echo >&2
+    echo "UNREVIEWED RANGE: $START_SHA..$(git rev-parse --short HEAD 2>/dev/null || echo HEAD)" >&2
+    echo "  Every issue here passed its own audit; nothing has read them as one" >&2
+    echo "  change. Issues:$(for e in $LANDED; do printf ' #%s' "${e%%:*}"; done)" >&2
+    echo "  Review before merging, or after: /code-review over that range." >&2
+  fi
+  exit 1
+}
 say() { echo; echo "== $*"; }
 
 # Hand an issue back to a human. Swallowing a failure here leaves the issue
