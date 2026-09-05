@@ -425,6 +425,18 @@ GATE_FILE=$(echo "$GATE" | awk '{print ($1=="bash"||$1=="sh") ? $2 : $1}' | sed 
 run_gate "$WORKDIR/gate-preflight.txt" \
   || { tail -20 "$WORKDIR/gate-preflight.txt"; die "gate red on the starting commit"; }
 
+# The sandbox, resolved **here** and held for the whole run. Two reasons it
+# cannot be left to `sandbox_id`'s lazy branch. `docker sandbox run` keys a
+# sandbox to the workspace directory it is called from, and the run works in a
+# worktree under $WORKDIR — so a lazy call from there asks for a sandbox of a
+# directory nobody has ever logged into, and gets a fresh one with no
+# credentials. And every call to `sandbox_id` is inside a `$(...)`, so the
+# assignment it makes dies with the subshell and the next call creates another
+# sandbox again. Assigned in this shell, before the worktree exists, it is the
+# repo's own workspace and every later subshell inherits it.
+SBX=$(sandbox_id)
+say "sandbox: $SBX"
+
 # sandbox smoke test (also verifies auth); needs `timeout` or `gtimeout` if present
 TO=""
 command -v timeout  >/dev/null && TO="timeout 180"
