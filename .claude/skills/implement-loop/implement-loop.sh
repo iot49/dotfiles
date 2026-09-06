@@ -64,6 +64,23 @@
 set -u  # not -e: one failing issue must not kill the batch; errors are handled
 
 # ---------------------------------------------------------------------------
+# flags, pulled out of "$@" before anything reads it as a batch
+# ---------------------------------------------------------------------------
+SELFDIR=$(cd "$(dirname "$0")" && pwd)
+RESUME=0
+FORCE_NEW=0
+_args=""
+for _a in "$@"; do
+  case "$_a" in
+    --resume)    RESUME=1 ;;
+    --force-new) FORCE_NEW=1 ;;
+    *)           _args="$_args $_a" ;;
+  esac
+done
+# shellcheck disable=SC2086
+set -- $_args
+
+# ---------------------------------------------------------------------------
 # setup
 # ---------------------------------------------------------------------------
 # The run's state — prompts, audits, the log, the rulings a later batch is
@@ -73,7 +90,44 @@ set -u  # not -e: one failing issue must not kill the batch; errors are handled
 # it for the one place that wants it relative (`.git/info/exclude`).
 WORKNAME=".implement-loop"
 WORKDIR="$PWD/$WORKNAME"
-TS=$(date +%Y%m%d-%H%M%S)
+mkdir -p "$WORKDIR"
+STATE="$WORKDIR/state.json"
+
+# A run that stops leaves its branch and its worktree; until this existed the
+# next run force-removed that worktree and cut a fresh branch, so the issues —
+# still open, still labelled — were implemented a second time. The state file
+# is what makes the second run a continuation instead. It is written after
+# every issue and at each phase boundary, and removed when the run reaches its
+# end — whatever the landing was, since by then the work is pushed and there is
+# nothing to continue. Only a run that stops early leaves it behind.
+ST_TS=""; ST_BRANCH=""; ST_START_SHA=""; ST_ORDER=""; ST_LANDED=""
+ST_PRESKIP=""; ST_PR_URL=""; ST_PHASE=""
+if [ -f "$STATE" ]; then
+  eval "$(python3 "$SELFDIR/il-state.py" read "$STATE")"
+fi
+
+if [ "$RESUME" = 1 ]; then
+  [ -n "$ST_TS" ] || { echo "ABORT: --resume, but $STATE holds no run to resume" >&2; exit 1; }
+  echo "== resuming $ST_BRANCH (run $ST_TS, stopped in phase ${ST_PHASE:-unknown})"
+  TS="$ST_TS"
+elif [ -n "$ST_TS" ] && [ "$FORCE_NEW" = 0 ]; then
+  # Refuse rather than overwrite. The old behaviour destroyed the unfinished
+  # worktree silently, which is how a draft PR ends up orphaned with nothing
+  # pointing at it.
+  {
+    echo "ABORT: an unfinished run is on record and would be discarded."
+    echo "  run:    $ST_TS, stopped in phase ${ST_PHASE:-unknown}"
+    echo "  branch: $ST_BRANCH"
+    echo "  landed:$(for e in $ST_LANDED; do printf ' #%s' "${e%%:*}"; done)"
+    [ -n "$ST_PR_URL" ] && echo "  PR:     $ST_PR_URL"
+    echo
+    echo "  Continue it:  $0 --resume"
+    echo "  Discard it:   $0 --force-new"
+  } >&2
+  exit 1
+else
+  TS=$(date +%Y%m%d-%H%M%S)
+fi
 LOG="$WORKDIR/run-$TS.log"
 RULINGS="$WORKDIR/rulings.md"
 FAILED="$WORKDIR/failed-$TS.txt"     # issues that did not land (failed or skipped)
@@ -83,6 +137,7 @@ REVIEW="$WORKDIR/review-$TS.md"      # per run: $WORKDIR survives, and a batch
                                      # previous batch's review under this
                                      # batch's range (#274).
 BRANCH="implement-loop/$TS"
+[ "$RESUME" = 1 ] && [ -n "$ST_BRANCH" ] && BRANCH="$ST_BRANCH"
 CI_TIMEOUT=${IL_CI_TIMEOUT:-1800}
 PROTECTED=${IL_PROTECTED:-".github/** scripts/check.sh Makefile package.json pnpm-lock.yaml package-lock.json yarn.lock pyproject.toml uv.lock requirements*.txt Cargo.toml Cargo.lock go.mod go.sum"}
 PR_URL=""            # opened by the first issue that lands; the landing block reuses it
@@ -97,7 +152,7 @@ mkdir -p "$WORKDIR"
 KEEP_DAYS=${IL_KEEP_DAYS:-14}
 if [ "$KEEP_DAYS" -gt 0 ] 2>/dev/null; then
   find "$WORKDIR" -maxdepth 1 -type f -mtime +"$KEEP_DAYS" \
-    ! -name rulings.md -delete 2>/dev/null
+    ! -name rulings.md ! -name state.json -delete 2>/dev/null
 fi
 touch "$FAILED"
 # keep the workdir out of git without touching .gitignore; also makes
@@ -130,6 +185,24 @@ die() {
   exit 1
 }
 say() { echo; echo "== $*"; }
+
+# Written after every issue and at each phase boundary. `--resume` reads it;
+# a plain run refuses when it finds one. Removed when the run reaches its end.
+save_state() { # save_state <phase>
+  python3 "$SELFDIR/il-state.py" write "$STATE" "$TS" "$BRANCH" "${START_SHA:-}" \
+    "${ORDER:-}" "${LANDED:-}" "${PRESKIP:-}" "${PR_URL:-}" "$1"
+}
+
+# Skips are invisible: a test that stops running because its fixture broke
+# reads exactly like one that never ran. Count them at the two gate runs that
+# bracket a batch. Naming them needs `-rs` in the repo's own gate command,
+# which is not this script's to set.
+skip_count() { # skip_count <gate output file>
+  local n
+  [ -f "$1" ] || { echo unknown; return; }
+  n=$(grep -oE '[0-9]+ skipped' "$1" | tail -1 | awk '{print $1}')
+  echo "${n:-unknown}"
+}
 
 # Hand an issue back to a human. Swallowing a failure here leaves the issue
 # labelled ready-for-agent, so the next run picks up exactly what this one
@@ -424,6 +497,7 @@ GATE_FILE=$(echo "$GATE" | awk '{print ($1=="bash"||$1=="sh") ? $2 : $1}' | sed 
 
 run_gate "$WORKDIR/gate-preflight.txt" \
   || { tail -20 "$WORKDIR/gate-preflight.txt"; die "gate red on the starting commit"; }
+SKIPS_PRE=$(skip_count "$WORKDIR/gate-preflight.txt")
 
 # The sandbox, resolved **here** and held for the whole run. Two reasons it
 # cannot be left to `sandbox_id`'s lazy branch. `docker sandbox run` keys a
@@ -447,6 +521,9 @@ echo "$SMOKE" | jget result | grep -q "OK" \
   || die "sandbox smoke test failed — run 'docker sandbox run claude' once interactively to authenticate. Output: $SMOKE"
 
 START_SHA=$(git rev-parse HEAD)
+# On a resume the range is the one the stopped run opened, not wherever the
+# default branch has got to since.
+[ "$RESUME" = 1 ] && [ -n "$ST_START_SHA" ] && START_SHA="$ST_START_SHA"
 # A worktree of its own, not a checkout in the tree this was started from. The
 # run and whoever started it share a working tree otherwise, and a person or an
 # agent switching branches in it does not disturb the run — it silently steals
@@ -465,7 +542,13 @@ ROOT=$PWD
 WT="$WORKDIR/tree"
 git worktree remove --force "$WT" 2>/dev/null
 git worktree prune
-git worktree add -q "$WT" -b "$BRANCH" "$START_SHA" || die "could not create $BRANCH as a worktree at $WT"
+if [ "$RESUME" = 1 ]; then
+  # the branch already carries the stopped run's commits: check it out at its
+  # tip, do not cut it again from $START_SHA
+  git worktree add -q "$WT" "$BRANCH" || die "could not re-attach $BRANCH as a worktree at $WT"
+else
+  git worktree add -q "$WT" -b "$BRANCH" "$START_SHA" || die "could not create $BRANCH as a worktree at $WT"
+fi
 cd "$WT" || die "could not enter $WT"
 say "starting at $START_SHA on $BRANCH in $WT"
 
@@ -473,6 +556,27 @@ say "starting at $START_SHA on $BRANCH in $WT"
 # choose the batch and order it by GitHub's native dependencies
 # ---------------------------------------------------------------------------
 say "batch"
+DROPPED=""         # landed, but the screen flagged its notes and they were cut
+SCOPE=""           # landed and closed, with an audit note about extra work
+RISKY=""           # of those, the ones the audit rated RISK rather than SCOPE
+
+if [ "$RESUME" = 1 ]; then
+  # The plan is the one the stopped run made. Re-deriving it would re-query
+  # dependencies that may have changed since, and could reorder work already
+  # sitting on the branch.
+  LANDED="$ST_LANDED"
+  PRESKIP="$ST_PRESKIP"
+  PR_URL="$ST_PR_URL"
+  _done=""
+  for _e in $LANDED; do _done="$_done ${_e%%:*}"; done
+  while read -r _n; do [ -n "$_n" ] && _done="$_done $_n"; done < "$FAILED"
+  ORDER=""
+  for _n in $ST_ORDER; do
+    echo " $_done " | grep -q " $_n " || ORDER="$ORDER $_n"
+  done
+  ORDER=${ORDER# }
+  say "resumed. landed already:$(for _e in $LANDED; do printf ' #%s' "${_e%%:*}"; done); still to do: ${ORDER:-none}"
+else
 
 if [ $# -gt 0 ]; then
   ISSUES="$*"
@@ -534,15 +638,16 @@ say "plan: $ORDER"
 [ -n "$PRESKIP" ] && say "pre-skipped (open blocker outside batch): $PRESKIP"
 [ -n "${ORDER// /}" ] || die "nothing runnable after dependency resolution"
 
-# Truncate, do not touch: the prompt below tells the agent "the batch has
-# already ruled on these" and gives a ruling authority over its issue body, so
-# a file that accumulates across runs pins one batch's workarounds as standing
-# precedent for every later one. #236 died on rulings carried over this way.
-: > "$RULINGS"
-LANDED=""          # "NN:presha:postsha ..."
-DROPPED=""         # landed, but the screen flagged its notes and they were cut
-SCOPE=""           # landed and closed, with an audit note about extra work
-RISKY=""           # of those, the ones the audit rated RISK rather than SCOPE
+  # Truncate, do not touch: the prompt below tells the agent "the batch has
+  # already ruled on these" and gives a ruling authority over its issue body, so
+  # a file that accumulates across runs pins one batch's workarounds as standing
+  # precedent for every later one. #236 died on rulings carried over this way.
+  # A resume keeps the first half's rulings for the same reason it keeps the
+  # branch: they are this batch's, and it is still this batch.
+  : > "$RULINGS"
+  LANDED=""          # "NN:presha:postsha ..."
+fi
+save_state issues
 
 # ---------------------------------------------------------------------------
 # per issue
@@ -851,12 +956,26 @@ for NN in $ORDER; do
     gh issue comment "$NN" --body "$(printf 'implement-loop: failed. Work was reset; nothing landed.\n\n```\n%s\n```' "$(tail -40 "$WORKDIR/failure-$NN.txt")")" || true
     hand_back "$NN"
   fi
+  save_state issues
 done
 
 # ---------------------------------------------------------------------------
 # after the last issue: review the whole range
 # ---------------------------------------------------------------------------
 SPEC_FAILS=""
+FINDINGS=""
+# The last issue's gate ran with every earlier issue already in the tree, so it
+# is the union run; compare its skips with the pre-flight's.
+SKIPS_POST=unknown
+for _e in $LANDED; do SKIPS_POST=$(skip_count "$WORKDIR/gate-${_e%%:*}.txt"); done
+if [ -n "${LANDED// /}" ]; then
+  if [ "$SKIPS_PRE" != "$SKIPS_POST" ]; then
+    say "skipped tests: $SKIPS_PRE at pre-flight, $SKIPS_POST after the batch — something changed what runs"
+  else
+    say "skipped tests: $SKIPS_PRE, unchanged across the batch"
+  fi
+fi
+save_state review
 if [ -n "${LANDED// /}" ]; then
   say "final review over $START_SHA..HEAD"
   RV="$WORKDIR/review-prompt.md"
@@ -876,14 +995,55 @@ if [ -n "${LANDED// /}" ]; then
     echo
     echo "Write the full report to $REVIEW."
     echo
-    echo "End your reply with exactly this block: the numbers of issues with a"
-    echo "requirement that was NOT met, space separated, or empty:"
+    echo "End your reply with exactly these two blocks."
+    echo
+    echo "The numbers of issues with a requirement that was NOT met, space"
+    echo "separated, or empty:"
     echo "<spec-failures></spec-failures>"
+    echo
+    echo "Then the findings that deserve an issue of their own — one per LINE,"
+    echo "three fields separated by \` | \`: the file it is in, a one-line"
+    echo "title naming the component, and a sentence saying what to change and"
+    echo "why. Empty if there are none."
+    echo
+    echo "A finding that cannot name a file is not an issue: leave it in the"
+    echo "report above. Do not suggest a label and do not claim a finding is"
+    echo "ready to implement — everything filed here is triaged by a person."
+    echo "<findings></findings>"
   } > "$RV"
   RVOUT=$(sb "$RV" | jget result)
   SPEC_FAILS=$(echo "$RVOUT" | extract_tag spec-failures)
+  FINDINGS=$(echo "$RVOUT" | extract_tag findings)
   [ -f "$REVIEW" ] || echo "$RVOUT" > "$REVIEW"
   say "spec failures: '${SPEC_FAILS:-none}'"
+fi
+
+# ---------------------------------------------------------------------------
+# the review's findings become issues, so they are tracked instead of being
+# prose in a summary that points at files on one machine's disk
+# ---------------------------------------------------------------------------
+FILED=""
+if [ -n "${FINDINGS//[[:space:]]/}" ]; then
+  say "filing findings"
+  gh label create needs-triage --description "Maintainer needs to evaluate this issue" --color FBCA04 2>/dev/null || true
+  while IFS= read -r line; do
+    [ -n "${line//[[:space:]]/}" ] || continue
+    case "$line" in *\|*\|*) : ;; *) say "finding skipped, not three fields: $line"; continue ;; esac
+    F_FILE=$(echo "$line" | awk -F'|' '{print $1}' | sed 's/^ *//;s/ *$//')
+    F_TITLE=$(echo "$line" | awk -F'|' '{print $2}' | sed 's/^ *//;s/ *$//')
+    F_BODY=$(echo "$line" | awk -F'|' '{for(i=3;i<=NF;i++) printf "%s%s", $i, (i<NF?"|":"")}' | sed 's/^ *//;s/ *$//')
+    [ -n "$F_FILE" ] && [ -n "$F_TITLE" ] || { say "finding skipped, no file or title: $line"; continue; }
+    # needs-triage and nothing else. The judge that would assert an issue is
+    # fully decided is the same one that reports on its own batch, and a
+    # follow-up it promoted would run unattended in the next one.
+    F_URL=$(gh issue create --label needs-triage \
+      --title "$F_TITLE" \
+      --body "$(printf 'Found by implement-loop %s in the range review of `%s..HEAD`.\n\n**File:** `%s`\n\n%s\n\nThis is a machine-written finding: it carries no state label beyond `needs-triage` and nothing has judged it ready to implement. The full review is on the batch summary issue.' "$TS" "$START_SHA" "$F_FILE" "$F_BODY")") \
+      && FILED="$FILED $F_URL" || say "could not file a finding: $F_TITLE"
+  done <<EOF_FINDINGS
+$FINDINGS
+EOF_FINDINGS
+  say "filed:${FILED:- none}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -892,6 +1052,7 @@ fi
 # removes tests, opens the PR but does not auto-merge it.
 # ---------------------------------------------------------------------------
 HOLD=""
+save_state hold
 if [ -n "${LANDED// /}" ]; then
   say "hold check"
   for f in $(git diff --name-only "$START_SHA"..HEAD); do
@@ -924,6 +1085,7 @@ fi
 # land: push the branch, open the PR, auto-merge on CI green, wait
 # ---------------------------------------------------------------------------
 LANDING=nothing     # nothing | merged | held | ci-failed | conflict | timeout | push-failed
+save_state land
 if [ -n "${LANDED// /}" ]; then
   say "push $BRANCH"
   if ! git push --force-with-lease -u origin "$BRANCH"; then
@@ -1047,6 +1209,12 @@ BODY="$WORKDIR/summary-$TS.md"
   done
   [ -z "${SPEC_FAILS// /}" ] && [ -z "${SCOPE// /}" ] && [ -z "${DROPPED// /}" ] && [ ! -s "$FAILED" ] && [ "$LANDING" = merged ] \
     && echo "- Nothing. Everything landed, merged via $PR_URL, and is closed."
+  if [ -n "${LANDED// /}" ] && [ "$SKIPS_PRE" != "$SKIPS_POST" ]; then
+    echo "- **The suite skipped a different number of tests after this batch than before it**: $SKIPS_PRE at pre-flight, $SKIPS_POST after. A test that stops running looks exactly like one that never ran, so this is worth a glance."
+  fi
+  for u in $FILED; do
+    echo "- Filed from the range review: $u (\`needs-triage\` — nothing has judged it ready)."
+  done
   echo
   echo "## What landed"
   if [ -n "${LANDED// /}" ]; then
@@ -1055,6 +1223,7 @@ BODY="$WORKDIR/summary-$TS.md"
       echo "- #$NN: \`$PRE..$POST\`"
     done
     echo "- PR: ${PR_URL:-none} — $LANDING"
+    echo "- Skipped tests: $SKIPS_PRE at pre-flight, $SKIPS_POST after the batch."
   else
     echo "- nothing"
   fi
@@ -1078,14 +1247,25 @@ SUMMARY_URL=$(gh issue create --label needs-triage \
 
 say "done. summary: $SUMMARY_URL"
 
+# The run reached its end. Whatever the landing was, the work is pushed and the
+# PR exists, so there is nothing for --resume to continue and the next plain
+# run must not be refused on this run's account. Only a run that stops early —
+# die(), or a kill — leaves the file behind.
+rm -f "$STATE"
+
 # ---------------------------------------------------------------------------
 # no arguments = the whole backlog: after a merged batch, look again. Failed
 # issues left the label; only issues pre-skipped for an outside blocker still
 # carry it, so "anything besides those" means new or newly unblocked work.
 # ---------------------------------------------------------------------------
 if [ $# -eq 0 ] && [ -z "${IL_ONCE:-}" ] && [ "$LANDING" = merged ]; then
+  # Subtract what this run just closed. GitHub's issue index lags a close by
+  # a second or two, so the query returns issues this batch has already
+  # finished, and the restart spends a whole pre-flight gate finding that out.
+  CLOSED_HERE=""
+  for _e in $LANDED; do CLOSED_HERE="$CLOSED_HERE ${_e%%:*}"; done
   NEXT=$(gh issue list --label ready-for-agent --state open --json number --jq '.[].number' \
-    | grep -vxF -f <(printf '%s\n' $PRESKIP; echo "") | tr '\n' ' ')
+    | grep -vxF -f <(printf '%s\n' $PRESKIP; printf '%s\n' $CLOSED_HERE; echo "") | tr '\n' ' ')
   if [ -n "${NEXT// /}" ]; then
     say "backlog still has $NEXT — going again"
     exec "$0"
