@@ -26,8 +26,9 @@ cold context per unit of work, bash as the loop, Docker sandbox.
 
 ```
 pre-flight   on main, clean tree, pull --rebase; main protected, auto-merge
-             on, ci.yml present; gate green; sandbox smoke test;
-             branch implement-loop/<timestamp>
+             on, ci.yml present; sandbox smoke test; worktree on branch
+             implement-loop/<timestamp>; gate green, run inside that
+             worktree so it is warm before the first agent
 batch        args, or every open issue labelled ready-for-agent;
              ordered by GitHub's native blocked-by dependencies
 per issue    fetch issue body + comments to a file (host); an empty body

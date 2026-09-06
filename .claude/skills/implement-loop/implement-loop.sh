@@ -495,10 +495,6 @@ say "gate: $GATE"
 GATE_FILE=$(echo "$GATE" | awk '{print ($1=="bash"||$1=="sh") ? $2 : $1}' | sed 's#^\./##')
 [ -f "$GATE_FILE" ] && PROTECTED="$PROTECTED $GATE_FILE"
 
-run_gate "$WORKDIR/gate-preflight.txt" \
-  || { tail -20 "$WORKDIR/gate-preflight.txt"; die "gate red on the starting commit"; }
-SKIPS_PRE=$(skip_count "$WORKDIR/gate-preflight.txt")
-
 # The sandbox, resolved **here** and held for the whole run. Two reasons it
 # cannot be left to `sandbox_id`'s lazy branch. `docker sandbox run` keys a
 # sandbox to the workspace directory it is called from, and the run works in a
@@ -551,6 +547,20 @@ else
 fi
 cd "$WT" || die "could not enter $WT"
 say "starting at $START_SHA on $BRANCH in $WT"
+
+# The gate on the starting commit, run **here** rather than in the checkout
+# this was started from. Same commit, so the safety property is unchanged: a
+# gate already red stops the run before any agent works. What it buys is a warm
+# tree. A fresh worktree has no `node_modules` and no `.venv`, and the first
+# agent used to meet the gate before anything had built them — inside a sandbox
+# with no network and no package manager, so it could not build them either.
+# Every batch on 2026-09-05/06 then recorded a ruling that the gate was
+# unrunnable and went on anyway. The cold cost was always being paid, just one
+# step too late to be useful. Nothing here knows what the gate warms; that is
+# the repo's business.
+run_gate "$WORKDIR/gate-preflight.txt" \
+  || { tail -20 "$WORKDIR/gate-preflight.txt"; die "gate red on the starting commit"; }
+SKIPS_PRE=$(skip_count "$WORKDIR/gate-preflight.txt")
 
 # ---------------------------------------------------------------------------
 # choose the batch and order it by GitHub's native dependencies
