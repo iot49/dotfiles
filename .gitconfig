@@ -12,3 +12,5 @@
 	required = true
 [pull]
 	ff = true
+[url "git@github.com:iot49/"]
+	insteadOf = https://github.com/iot49/

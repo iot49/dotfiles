@@ -113,6 +113,8 @@ done
 
 `.zshrc_Darwin` sets `SSH_AUTH_SOCK` to 1Password's agent socket. Open the 1Password app → *Settings → Developer → Use the SSH agent*. Git and SSH keys are managed there; no key files or `.env` secrets on disk.
 
+`.gitconfig` rewrites `https://github.com/iot49/` to `git@github.com:iot49/`, so repos under this account go over SSH via the agent even when a clone's remote is an HTTPS URL. No personal access token is stored for them. Third-party HTTPS clones are unaffected.
+
 **6. Restart the shell**
 ```bash
 exec zsh
