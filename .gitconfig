@@ -1,8 +1,6 @@
 [user]
 	name = Bernhard Boser
 	email = bernhard.e.boser@gmail.com
-[credential]
-	helper = osxkeychain
 [init]
 	defaultBranch = main
 [core]
