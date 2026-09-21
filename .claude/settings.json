@@ -1,4 +1,23 @@
 {
+  "deniedMcpServers": [
+    { "serverName": "claude.ai Expedia" },
+    { "serverName": "claude.ai Booking.com" },
+    { "serverName": "claude.ai Kiwi.com" },
+    { "serverName": "claude.ai Uber" },
+    { "serverName": "claude.ai Viator" },
+    { "serverName": "claude.ai AllTrails" },
+    { "serverName": "claude.ai Tripadvisor" },
+    { "serverName": "claude.ai Gmail" },
+    { "serverName": "claude.ai Google Drive" },
+    { "serverName": "claude.ai Google Calendar" },
+    { "serverName": "claude.ai Cloudflare Developer Platform" }
+  ],
+  "skillOverrides": {
+    "anthropic-skills:docx": "user-invocable-only",
+    "anthropic-skills:pptx": "user-invocable-only",
+    "anthropic-skills:xlsx": "user-invocable-only",
+    "anthropic-skills:pdf": "user-invocable-only"
+  },
   "permissions": {
     "deny": [
       "Bash(sudo *)",
@@ -74,6 +93,10 @@
   "remoteControlAtStartup": false,
   "agentPushNotifEnabled": true,
   "autoMode": {
+    "soft_deny": [
+      "$defaults",
+      "Bash(git push origin main:*) in ~ (iot49/dotfiles) — public repo default-branch push, no branch protection configured; treat as a routine but reviewable action rather than blind allow"
+    ],
     "environment": [
       "### Org-wide",
       "**Organization**: None configured",
@@ -99,10 +122,7 @@
       "**Primary use of Claude Code**: software development (personal dotfiles / IoT hobby workspace)",
       "**Trusted repo**: iot49/dotfiles (`~`, remote `origin`) — PUBLIC repo; only this repo's own work belongs here, and per its own CLAUDE.md, secrets are never committed regardless of visibility",
       "**Org-specific CLIs**: None configured — `op` (1Password CLI) is used routinely for secret retrieval per CLAUDE.md; `balena` seen frequently in shell history (127×) but not corroborated in-session"
-    ],
-    "soft_deny": [
-      "$defaults",
-      "Bash(git push origin main:*) in ~ (iot49/dotfiles) — public repo default-branch push, no branch protection configured; treat as a routine but reviewable action rather than blind allow"
     ]
-  }
+  },
+  "inputNeededNotifEnabled": true
 }
