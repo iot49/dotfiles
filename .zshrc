@@ -77,7 +77,7 @@ export PATH="$PATH:$HOME/.lmstudio/bin"
 export PATH="/opt/homebrew/opt/openjdk/bin:$PATH"
 export CPPFLAGS="-I/opt/homebrew/opt/openjdk/include"
 # pnpm
-export PNPM_HOME="/Users/ttmetro/Library/pnpm"
+export PNPM_HOME="$HOME/Library/pnpm"
 case ":$PATH:" in
   *":$PNPM_HOME:"*) ;;
   *) export PATH="$PNPM_HOME:$PATH" ;;
