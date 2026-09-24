@@ -75,7 +75,9 @@
         "github.com",
         "api.github.com",
         "codeload.github.com",
-        "*.githubusercontent.com"
+        "*.githubusercontent.com",
+        "gleis49.org",
+        "*.gleis49.org"
       ]
     },
     "filesystem": {
@@ -83,7 +85,10 @@
         "~/Library/Caches/uv"
       ]
     },
-    "enableWeakerNetworkIsolation": true
+    "enableWeakerNetworkIsolation": true,
+    "excludedCommands": [
+      "mosquitto_sub"
+    ]
   },
   "feedbackDrafts": "off",
   "effortLevel": "high",
