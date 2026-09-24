@@ -41,6 +41,13 @@ An empty batch is not a failure to ask about: if nothing carries
 
 ## Launch
 
+Launch it with the Bash sandbox **disabled** (`dangerouslyDisableSandbox:
+true`). This is not optional and not a retry-on-failure: the run drives its
+agent inside a Docker sandbox, a backgrounded process inherits the sandbox of
+the call that started it, and the sandbox denies `docker.sock`. Launched
+inside it the run dies in its first seconds, before the container it needs
+exists.
+
 ```
 mkdir -p .implement-loop
 nohup bash ~/.claude/skills/implement-loop/implement-loop.sh <args> \
@@ -49,6 +56,11 @@ echo $!
 ```
 
 The script tees its own log to `.implement-loop/run-<timestamp>.log`.
+
+Confirm it got past the Docker smoke test before reporting: the log's first
+lines are `== pre-flight`, `== gate:` and `== sandbox: <container id>`. A log
+that stays empty means the launch was sandboxed after all. That is the one
+thing to check; do not otherwise watch the run.
 
 On startup it prunes per-run artifacts in `.implement-loop/` older than
 `IL_KEEP_DAYS` (default 14). `rulings.md` is never pruned; what happened to an

@@ -160,6 +160,22 @@ touch "$FAILED"
 if [ -d .git ]; then
   grep -qxF "$WORKNAME/" .git/info/exclude 2>/dev/null || echo "$WORKNAME/" >> .git/info/exclude
 fi
+# Docker must be reachable before anything else, and this check runs *before*
+# the log is redirected through `tee`: a launch that cannot reach the daemon
+# dies with its output still in the pipe, so the run leaves a zero-byte log
+# and no clue. The commonest cause is being launched from a sandboxed shell,
+# which denies the socket. Say so here, on the terminal and in the log, in one
+# line. (Report the real stderr — `sandbox_id` discards it.)
+if ! DOCKER_ERR=$(docker version --format '{{.Server.Version}}' 2>&1); then
+  {
+    echo "ABORT: cannot reach the Docker daemon, which the sandboxed agent needs."
+    echo "  docker said: $DOCKER_ERR"
+    echo "  If that is a permission error on docker.sock, this was launched from a"
+    echo "  sandboxed shell. Re-launch it with the sandbox disabled."
+  } | tee -a "$LOG" >&2
+  exit 1
+fi
+
 exec > >(tee -a "$LOG") 2>&1
 
 die() {
@@ -260,8 +276,19 @@ mirror_branch() { # mirror_branch — call after LANDED has grown
 # it: same container, same credentials, no terminal required.
 SBX=""
 sandbox_id() {
-  [ -n "$SBX" ] || SBX=$(docker sandbox run -d claude 2>/dev/null | tail -1)
-  [ -n "$SBX" ] || die "could not create a sandbox for $PWD"
+  # Keep docker's stderr: "permission denied ... docker.sock" is the whole
+  # diagnosis when a launch cannot reach the daemon, and discarding it once
+  # cost a silent run. `die` here would only kill the `$(...)` subshell every
+  # caller wraps this in, so the run would carry on with an empty SBX — signal
+  # the caller instead and let it stop the run.
+  if [ -z "$SBX" ]; then
+    local out
+    out=$(docker sandbox run -d claude 2>&1) || true
+    SBX=$(echo "$out" | tail -1)
+    case "$SBX" in
+      ""|*[!A-Za-z0-9_.-]*) echo "could not create a sandbox for $PWD: $out" >&2; SBX=""; return 1 ;;
+    esac
+  fi
   echo "$SBX"
 }
 sandbox_claude() { # sandbox_claude <claude args...>
@@ -504,7 +531,7 @@ GATE_FILE=$(echo "$GATE" | awk '{print ($1=="bash"||$1=="sh") ? $2 : $1}' | sed 
 # assignment it makes dies with the subshell and the next call creates another
 # sandbox again. Assigned in this shell, before the worktree exists, it is the
 # repo's own workspace and every later subshell inherits it.
-SBX=$(sandbox_id)
+SBX=$(sandbox_id) || die "no sandbox, so no agent can run. See the error above."
 say "sandbox: $SBX"
 
 # sandbox smoke test (also verifies auth); needs `timeout` or `gtimeout` if present
@@ -1048,7 +1075,7 @@ if [ -n "${FINDINGS//[[:space:]]/}" ]; then
     # follow-up it promoted would run unattended in the next one.
     F_URL=$(gh issue create --label needs-triage \
       --title "$F_TITLE" \
-      --body "$(printf 'Found by implement-loop %s in the range review of `%s..HEAD`.\n\n**File:** `%s`\n\n%s\n\nThis is a machine-written finding: it carries no state label beyond `needs-triage` and nothing has judged it ready to implement. The full review is on the batch summary issue.' "$TS" "$START_SHA" "$F_FILE" "$F_BODY")") \
+      --body "$(printf 'Found by implement-loop %s in the range review of `%s..HEAD`.\n\n**File:** `%s`\n\n%s\n\nThis text was written by that review rather than by a person. What state the issue is in is whatever its labels say now, not what this sentence said when it was filed.' "$TS" "$START_SHA" "$F_FILE" "$F_BODY")") \
       && FILED="$FILED $F_URL" || say "could not file a finding: $F_TITLE"
   done <<EOF_FINDINGS
 $FINDINGS
@@ -1111,9 +1138,25 @@ if [ -n "${LANDED// /}" ]; then
       done
       [ -n "${SPEC_FAILS// /}" ] && { echo; echo "Spec findings (issue stays open): $SPEC_FAILS"; }
       [ -n "${SCOPE// /}" ] && { echo; echo "Audit scope findings (recorded on each issue, nothing held): $SCOPE"; }
-      [ -n "$HOLD" ] && { echo; echo "**HELD for a human** — the diff touches: $HOLD"; }
-      echo
-      echo "Issues are closed by the loop after the merge, not by this PR."
+      if [ -n "$HOLD" ]; then
+        echo
+        echo "**HELD for a human** — the diff touches: $HOLD"
+        echo
+        # A held PR is merged by a person, at whatever hour suits them, and
+        # this run is long gone by then: the close cannot be ours. The keyword
+        # hands it to GitHub, which is the only party still present. A spec
+        # failure is left off the list — that issue stays open on purpose.
+        for entry in $LANDED; do
+          NN=${entry%%:*}
+          echo " $SPEC_FAILS " | grep -q " $NN " && continue
+          echo "Closes #$NN"
+        done
+        echo
+        echo "Merging closes the issues above; their audit notes are already on them."
+      else
+        echo
+        echo "Issues are closed by the loop after the merge, not by this PR."
+      fi
     } > "$WORKDIR/pr-body.md"
     PR_TITLE="implement-loop $TS: $(for e in $LANDED; do printf '#%s ' "${e%%:*}"; done)"
     if [ -n "$PR_URL" ]; then
@@ -1137,8 +1180,14 @@ if [ -n "${LANDED// /}" ]; then
       DEADLINE=$(( $(date +%s) + CI_TIMEOUT ))
       LANDING=timeout
       while [ "$(date +%s)" -lt "$DEADLINE" ]; do
-        STATE=$(gh pr view "$PR_URL" --json state,mergeStateStatus --jq '.state + " " + .mergeStateStatus')
-        case "$STATE" in
+        # Not $STATE: that is the path to this run's state.json, and the
+        # cleanup at the end of the script removes whatever it names. A PR
+        # status assigned here left `rm -f "$STATE"` deleting a file called
+        # "OPEN CLEAN" and the real state file on disk, so the next batch —
+        # including this run's own "going again" — aborted on a run that had
+        # already finished.
+        PR_STATE=$(gh pr view "$PR_URL" --json state,mergeStateStatus --jq '.state + " " + .mergeStateStatus')
+        case "$PR_STATE" in
           MERGED*)  LANDING=merged;   break ;;
           *DIRTY)   LANDING=conflict; break ;;
         esac
@@ -1167,7 +1216,18 @@ fi
 # ---------------------------------------------------------------------------
 for entry in $LANDED; do
   NN=${entry%%:*}; rest=${entry#*:}; PRE=${rest%%:*}; POST=${rest##*:}
-  if [ "$LANDING" != merged ]; then
+  if [ "$LANDING" = held ] && ! echo " $SPEC_FAILS " | grep -q " $NN "; then
+    # Held is not failure: the work is sound and the PR only wants a person's
+    # eyes. Its body carries `Closes #NN`, so the merge closes this issue
+    # whenever it happens. Handing it back would be wrong twice — it is not
+    # waiting on anything done to the issue, and `ready-for-human` survives a
+    # close, so the label would sit on a closed issue for good.
+    if echo " $SCOPE " | grep -q " $NN "; then
+      gh issue comment "$NN" --body "$(printf 'implement-loop: implemented as %s..%s in %s, which is held for a human to merge. Merging it closes this issue. The audit found work the issue did not ask for — the findings are below.\n\n```\n%s\n```' "$PRE" "$POST" "$PR_URL" "$(tail -60 "$WORKDIR/scope-$NN.txt")")" || true
+    else
+      gh issue comment "$NN" --body "implement-loop: implemented as $PRE..$POST in $PR_URL, which is held for a human to merge. Merging it closes this issue." || true
+    fi
+  elif [ "$LANDING" != merged ]; then
     gh issue comment "$NN" --body "$(printf 'implement-loop: implemented as %s..%s in %s, which did not merge (%s). Leaving this open.' "$PRE" "$POST" "${PR_URL:-branch $BRANCH (local only)}" "$LANDING")" || true
     hand_back "$NN"
   elif echo " $SPEC_FAILS " | grep -q " $NN "; then
@@ -1201,15 +1261,33 @@ BODY="$WORKDIR/summary-$TS.md"
     timeout)     echo "- **CI did not finish within ${CI_TIMEOUT}s** on $PR_URL. Auto-merge is still armed; check the run." ;;
     push-failed) echo "- **Nothing was pushed** or the PR could not be opened. Commits are local on \`$BRANCH\`." ;;
   esac
+  # What became of the commits, and of the issue. These lines used to say
+  # "merged and closed" whatever the landing was, so a held batch contradicted
+  # the held line printed directly above it.
+  case "$LANDING" in
+    merged) CODE_FATE="merged"
+            ISSUE_FATE="merged and closed"
+            SETTLED=" Nothing is blocked on you." ;;
+    held)   CODE_FATE="implemented and held for your merge"
+            ISSUE_FATE="implemented; it closes when the held PR merges"
+            SETTLED="" ;;
+    *)      CODE_FATE="implemented but not merged ($LANDING)"
+            ISSUE_FATE="implemented but not merged ($LANDING)"
+            SETTLED="" ;;
+  esac
   for n in $SPEC_FAILS; do
-    echo "- #$n merged but a requirement was **not met** — it is back on \`ready-for-human\`. See the review below."
+    echo "- #$n $CODE_FATE, but a requirement was **not met** — it is back on \`ready-for-human\`. See the review below."
   done
   for n in $RISKY; do
-    echo "- #$n merged and closed, and the audit rated it **RISK** — a network call, a dependency, a disabled check or something else in that class. It landed because the audit reports rather than blocks. Nothing with real blast radius gets here silently: CI, the gate, dependency manifests and deleted tests still hold the PR. Read this one: \`$WORKDIR/scope-$n.txt\`."
+    # A spec failure has had its say above, and it keeps the issue open —
+    # saying "closed" about the same number two lines later contradicts it.
+    echo " $SPEC_FAILS " | grep -q " $n " && continue
+    echo "- #$n $ISSUE_FATE, and the audit rated it **RISK** — a network call, a dependency, a disabled check or something else in that class. It landed because the audit reports rather than blocks. Nothing with real blast radius gets here silently: CI, the gate, dependency manifests and deleted tests still hold the PR. Read this one: \`$WORKDIR/scope-$n.txt\`."
   done
   for n in $SCOPE; do
     echo " $RISKY " | grep -q " $n " && continue
-    echo "- #$n merged and closed, with an audit note — work the issue did not ask for. Nothing is blocked on you. Worth reading when convenient: \`$WORKDIR/scope-$n.txt\`. What it usually means is that the issue was underspecified where the agent had to decide."
+    echo " $SPEC_FAILS " | grep -q " $n " && continue
+    echo "- #$n $ISSUE_FATE, with an audit note — work the issue did not ask for.$SETTLED Worth reading when convenient: \`$WORKDIR/scope-$n.txt\`. What it usually means is that the issue was underspecified where the agent had to decide."
   done
   while read -r n; do
     [ -n "$n" ] && echo "- #$n did not land — see its issue comment for the reason (\`ready-for-human\`)."
