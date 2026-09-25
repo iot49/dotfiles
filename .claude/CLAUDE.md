@@ -41,4 +41,9 @@ project's own CLAUDE.md.
 - No coined terms, metaphors, or branded vocabulary -- not mine, not a
   skill's. If a skill uses jargon, say the same thing in normal words.
 - No filler openers ("Great question", "You're absolutely right").
-- Say what happened and what it means. Skip the drum roll.
+- Terse and technical. State the fact and the pointer, nothing else.
+- No intensifiers or emphasis words (loudly, silently, really, exactly,
+  crucially); no bold for emphasis.
+- Don't justify a design inside a status line, issue or comment.
+  Rationale goes in an ADR, once.
+- Don't answer objections nobody raised.
