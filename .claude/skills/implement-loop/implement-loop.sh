@@ -211,13 +211,19 @@ save_state() { # save_state <phase>
 
 # Skips are invisible: a test that stops running because its fixture broke
 # reads exactly like one that never ran. Count them at the two gate runs that
-# bracket a batch. Naming them needs `-rs` in the repo's own gate command,
-# which is not this script's to set.
+# bracket a batch. A gate that selects by marker (`-m "not docker"`) hides the
+# same change in the other field — marking a test moves it from passed to
+# deselected and nothing goes red — so count both. Naming them needs `-rs` in
+# the repo's own gate command, which is not this script's to set.
 skip_count() { # skip_count <gate output file>
-  local n
+  local s d
   [ -f "$1" ] || { echo unknown; return; }
-  n=$(grep -oE '[0-9]+ skipped' "$1" | tail -1 | awk '{print $1}')
-  echo "${n:-unknown}"
+  s=$(grep -oE '[0-9]+ skipped' "$1" | tail -1 | awk '{print $1}')
+  d=$(grep -oE '[0-9]+ deselected' "$1" | tail -1 | awk '{print $1}')
+  # neither field present: the gate said nothing about tests that did not run,
+  # which is not the same as none of them having done so
+  [ -z "$s" ] && [ -z "$d" ] && { echo unknown; return; }
+  echo "${s:-0} skipped, ${d:-0} deselected"
 }
 
 # Hand an issue back to a human. Swallowing a failure here leaves the issue
@@ -898,7 +904,15 @@ for NN in $ORDER; do
       echo "issue did not list. Real findings, but a human reads them after"
       echo "the change lands, so do not inflate them into RISK."
       echo
-      echo "Two things are NEVER extra. Refactors the issue reasonably"
+      echo "End every SCOPE item with 'behaviour: yes' when it changes what"
+      echo "the program does when it runs — something an operator, a caller"
+      echo "or a test would meet differently — and 'behaviour: no' when it"
+      echo "does not. A wording, a comment, a rearrangement, a name: no."
+      echo "A human reads the yes items first, which only works if the mark"
+      echo "is honest, so do not award it to make an item look worth the"
+      echo "reading."
+      echo
+      echo "Three things are NEVER extra. Refactors the issue reasonably"
       echo "implies. And work this repo's own conventions require of any"
       echo "change: read CLAUDE.md (and the CLAUDE.md of a directory the"
       echo "diff touches) and treat what it mandates as asked for, even"
@@ -908,11 +922,24 @@ for NN in $ORDER; do
       echo "the code. The issue body is not the whole of what was asked;"
       echo "the repo's standing rules are the rest of it."
       echo
+      echo "And prose beyond the acceptance criteria, in a change to a"
+      echo "document. A documentation issue cannot be carried out without"
+      echo "writing sentences its criteria did not enumerate, and that a"
+      echo "page explains or motivates what it states is this repo's"
+      echo "register, not extra capability. Report prose only where it"
+      echo "settles something the issue did not — a rule for future"
+      echo "changes, a commitment about work that does not exist yet, a"
+      echo "claim about code that is not there."
+      echo
       echo "First line of your reply must be exactly one of"
-      echo "'VERDICT: CLEAN' (nothing to report),"
+      echo "'VERDICT: CLEAN' (nothing to report — which includes the case"
+      echo "where everything you found falls under the three exclusions"
+      echo "above; say what you excluded and why, but the verdict stays"
+      echo "CLEAN),"
       echo "'VERDICT: SCOPE' (findings, none of them RISK), or"
       echo "'VERDICT: RISK' (at least one RISK item)."
-      echo "Then the list, with file and line and its kind for each item."
+      echo "Then the list, with file and line and its kind for each item,"
+      echo "and the behaviour mark on each SCOPE item."
     } > "$A"
     AOUT=$(sb "$A" | jget result)
     echo "$AOUT" > "$WORKDIR/audit-$NN.txt"
@@ -1006,10 +1033,12 @@ FINDINGS=""
 SKIPS_POST=unknown
 for _e in $LANDED; do SKIPS_POST=$(skip_count "$WORKDIR/gate-${_e%%:*}.txt"); done
 if [ -n "${LANDED// /}" ]; then
-  if [ "$SKIPS_PRE" != "$SKIPS_POST" ]; then
-    say "skipped tests: $SKIPS_PRE at pre-flight, $SKIPS_POST after the batch — something changed what runs"
+  if [ "$SKIPS_PRE" = unknown ] || [ "$SKIPS_POST" = unknown ]; then
+    say "tests not run: could not measure — the gate's output carries no skipped or deselected count"
+  elif [ "$SKIPS_PRE" != "$SKIPS_POST" ]; then
+    say "tests not run: $SKIPS_PRE at pre-flight, $SKIPS_POST after the batch — something changed what runs"
   else
-    say "skipped tests: $SKIPS_PRE, unchanged across the batch"
+    say "tests not run: $SKIPS_PRE, unchanged across the batch"
   fi
 fi
 save_state review
@@ -1297,8 +1326,9 @@ BODY="$WORKDIR/summary-$TS.md"
   done
   [ -z "${SPEC_FAILS// /}" ] && [ -z "${SCOPE// /}" ] && [ -z "${DROPPED// /}" ] && [ ! -s "$FAILED" ] && [ "$LANDING" = merged ] \
     && echo "- Nothing. Everything landed, merged via $PR_URL, and is closed."
-  if [ -n "${LANDED// /}" ] && [ "$SKIPS_PRE" != "$SKIPS_POST" ]; then
-    echo "- **The suite skipped a different number of tests after this batch than before it**: $SKIPS_PRE at pre-flight, $SKIPS_POST after. A test that stops running looks exactly like one that never ran, so this is worth a glance."
+  if [ -n "${LANDED// /}" ] && [ "$SKIPS_PRE" != unknown ] && [ "$SKIPS_POST" != unknown ] \
+     && [ "$SKIPS_PRE" != "$SKIPS_POST" ]; then
+    echo "- **The suite left a different number of tests unrun after this batch than before it**: $SKIPS_PRE at pre-flight, $SKIPS_POST after. A test that stops running looks exactly like one that never ran, so this is worth a glance."
   fi
   for u in $FILED; do
     echo "- Filed from the range review: $u (\`needs-triage\` — nothing has judged it ready)."
