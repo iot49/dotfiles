@@ -27,7 +27,7 @@
 #   an outsider may have written, stops the issue before anything runs.
 #
 # Audit rule: the audit reports, it does not veto. Every verdict but CLEAN is
-# recorded on the issue and in the summary, RISK more loudly than SCOPE, and
+# recorded on the issue and in the summary, RISK listed before SCOPE, and
 # the work lands either way. What holds a PR for a human is the deterministic
 # hold check — CI, the gate, dependency manifests, deleted tests — which needs
 # no judgement and covers the changes with real blast radius.
@@ -201,6 +201,8 @@ die() {
   exit 1
 }
 say() { echo; echo "== $*"; }
+# sb_run signals this shell from inside a `$(...)`, where `die` would only end the subshell.
+trap 'die "the sandbox agent got a 401. Run \`docker sandbox run claude\` to log in, then $0 --resume"' USR1
 
 # Written after every issue and at each phase boundary. `--resume` reads it;
 # a plain run refuses when it finds one. Removed when the run reaches its end.
@@ -354,6 +356,15 @@ print(wait if wait <= 6 * 3600 else 0)
 ' 2>/dev/null || echo 0
 }
 
+# A 401 fails every later call too, so it stops the run instead of the issue.
+is_auth_fail() { # is_auth_fail <text>
+  [ "$(printf '%s' "$1" | jget is_error)" = False ] && return 1
+  case "$1" in
+    *"401"*|*"authentication_error"*|*"/login"*) return 0 ;;
+  esac
+  return 1
+}
+
 # Run one sandboxed claude, waiting out a spent quota rather than returning a
 # reply with no verdict in it. Logging goes to stderr: stdout is the JSON the
 # caller is capturing.
@@ -361,6 +372,10 @@ sb_run() { # sb_run <command...>
   local out waits=0 nap
   while :; do
     out=$("$@")
+    if is_auth_fail "$out"; then
+      kill -USR1 $$
+      printf '%s' "$out"; return 0
+    fi
     is_limit "$out" || { printf '%s' "$out"; return 0; }
     if [ "$waits" -ge "$LIMIT_WAITS" ]; then
       echo "== units ran out again after $waits wait(s) — letting the run stop" >&2
@@ -539,6 +554,12 @@ GATE_FILE=$(echo "$GATE" | awk '{print ($1=="bash"||$1=="sh") ? $2 : $1}' | sed 
 # repo's own workspace and every later subshell inherits it.
 SBX=$(sandbox_id) || die "no sandbox, so no agent can run. See the error above."
 say "sandbox: $SBX"
+
+# A full Docker disk lets the sandbox login appear to succeed without saving,
+# and every agent call then returns 401.
+FREE_GB=$(docker exec "$SBX" df -Pk / 2>/dev/null | awk 'NR==2 {print int($4/1048576)}')
+[ -n "$FREE_GB" ] && [ "$FREE_GB" -lt "${IL_MIN_FREE_GB:-5}" ] \
+  && die "Docker's disk has $FREE_GB GB free; run \`docker builder prune\`"
 
 # sandbox smoke test (also verifies auth); needs `timeout` or `gtimeout` if present
 TO=""
@@ -960,10 +981,10 @@ for NN in $ORDER; do
         case "$(echo "$AOUT" | head -3)" in
           *"VERDICT: RISK"*)
             RISKY="$RISKY $NN"
-            say "issue #$NN: audit rated it RISK — landing it, and the summary says so loudly"
+            say "issue #$NN: audit rated it RISK; landing it"
             ;;
           *)
-            say "issue #$NN: audit found work beyond the issue — landing it and noting it"
+            say "issue #$NN: audit found work beyond the issue; landing it"
             ;;
         esac
         ;;
@@ -1311,12 +1332,12 @@ BODY="$WORKDIR/summary-$TS.md"
     # A spec failure has had its say above, and it keeps the issue open —
     # saying "closed" about the same number two lines later contradicts it.
     echo " $SPEC_FAILS " | grep -q " $n " && continue
-    echo "- #$n $ISSUE_FATE, and the audit rated it **RISK** — a network call, a dependency, a disabled check or something else in that class. It landed because the audit reports rather than blocks. Nothing with real blast radius gets here silently: CI, the gate, dependency manifests and deleted tests still hold the PR. Read this one: \`$WORKDIR/scope-$n.txt\`."
+    echo "- #$n $ISSUE_FATE, audit rated it RISK. See \`$WORKDIR/scope-$n.txt\`."
   done
   for n in $SCOPE; do
     echo " $RISKY " | grep -q " $n " && continue
     echo " $SPEC_FAILS " | grep -q " $n " && continue
-    echo "- #$n $ISSUE_FATE, with an audit note — work the issue did not ask for.$SETTLED Worth reading when convenient: \`$WORKDIR/scope-$n.txt\`. What it usually means is that the issue was underspecified where the agent had to decide."
+    echo "- #$n $ISSUE_FATE, audit found work the issue did not ask for.$SETTLED See \`$WORKDIR/scope-$n.txt\`."
   done
   while read -r n; do
     [ -n "$n" ] && echo "- #$n did not land — see its issue comment for the reason (\`ready-for-human\`)."
@@ -1328,7 +1349,7 @@ BODY="$WORKDIR/summary-$TS.md"
     && echo "- Nothing. Everything landed, merged via $PR_URL, and is closed."
   if [ -n "${LANDED// /}" ] && [ "$SKIPS_PRE" != unknown ] && [ "$SKIPS_POST" != unknown ] \
      && [ "$SKIPS_PRE" != "$SKIPS_POST" ]; then
-    echo "- **The suite left a different number of tests unrun after this batch than before it**: $SKIPS_PRE at pre-flight, $SKIPS_POST after. A test that stops running looks exactly like one that never ran, so this is worth a glance."
+    echo "- Unrun tests changed: $SKIPS_PRE at pre-flight, $SKIPS_POST after."
   fi
   for u in $FILED; do
     echo "- Filed from the range review: $u (\`needs-triage\` — nothing has judged it ready)."
