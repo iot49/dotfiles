@@ -1,23 +1,4 @@
 {
-  "deniedMcpServers": [
-    { "serverName": "claude.ai Expedia" },
-    { "serverName": "claude.ai Booking.com" },
-    { "serverName": "claude.ai Kiwi.com" },
-    { "serverName": "claude.ai Uber" },
-    { "serverName": "claude.ai Viator" },
-    { "serverName": "claude.ai AllTrails" },
-    { "serverName": "claude.ai Tripadvisor" },
-    { "serverName": "claude.ai Gmail" },
-    { "serverName": "claude.ai Google Drive" },
-    { "serverName": "claude.ai Google Calendar" },
-    { "serverName": "claude.ai Cloudflare Developer Platform" }
-  ],
-  "skillOverrides": {
-    "anthropic-skills:docx": "user-invocable-only",
-    "anthropic-skills:pptx": "user-invocable-only",
-    "anthropic-skills:xlsx": "user-invocable-only",
-    "anthropic-skills:pdf": "user-invocable-only"
-  },
   "permissions": {
     "deny": [
       "Bash(sudo *)",
@@ -37,13 +18,59 @@
       "Read(//**/.aws/credentials)",
       "Bash(git push --force*)",
       "Bash(git push -f *)",
-      "Bash(git clean -fdx*)",
+      "Bash(git clean*)",
+      "Bash(git reset --hard*)",
+      "Bash(git checkout .*)",
+      "Bash(git checkout -- .*)",
+      "Bash(git restore .*)",
+      "Bash(git branch -D*)",
       "Bash(rm -rf /*)",
       "Bash(rm -rf ~/*)"
     ],
     "defaultMode": "bypassPermissions"
   },
   "model": "opus",
+  "skillOverrides": {
+    "anthropic-skills:docx": "user-invocable-only",
+    "anthropic-skills:pptx": "user-invocable-only",
+    "anthropic-skills:xlsx": "user-invocable-only",
+    "anthropic-skills:pdf": "user-invocable-only"
+  },
+  "deniedMcpServers": [
+    {
+      "serverName": "claude.ai Expedia"
+    },
+    {
+      "serverName": "claude.ai Booking.com"
+    },
+    {
+      "serverName": "claude.ai Kiwi.com"
+    },
+    {
+      "serverName": "claude.ai Uber"
+    },
+    {
+      "serverName": "claude.ai Viator"
+    },
+    {
+      "serverName": "claude.ai AllTrails"
+    },
+    {
+      "serverName": "claude.ai Tripadvisor"
+    },
+    {
+      "serverName": "claude.ai Gmail"
+    },
+    {
+      "serverName": "claude.ai Google Drive"
+    },
+    {
+      "serverName": "claude.ai Google Calendar"
+    },
+    {
+      "serverName": "claude.ai Cloudflare Developer Platform"
+    }
+  ],
   "statusLine": {
     "type": "command",
     "command": "~/.claude/statusline.sh"
@@ -95,7 +122,9 @@
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
   "autoCompactEnabled": true,
+  "switchModelsOnFlag": false,
   "remoteControlAtStartup": false,
+  "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
   "autoMode": {
     "soft_deny": [
@@ -128,6 +157,5 @@
       "**Trusted repo**: iot49/dotfiles (`~`, remote `origin`) — PUBLIC repo; only this repo's own work belongs here, and per its own CLAUDE.md, secrets are never committed regardless of visibility",
       "**Org-specific CLIs**: None configured — `op` (1Password CLI) is used routinely for secret retrieval per CLAUDE.md; `balena` seen frequently in shell history (127×) but not corroborated in-session"
     ]
-  },
-  "inputNeededNotifEnabled": true
+  }
 }
