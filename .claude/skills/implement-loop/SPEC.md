@@ -182,6 +182,8 @@ a note for the summary, not an issue.
 2. The summary links them instead of pointing at local paths.
 3. No issue the loop files carries `ready-for-agent`.
 4. A review with no findings files nothing.
+5. A reply with no `<findings>` block at all is not "no findings": the
+   summary says nothing was filed and points at the saved reply (#634).
 
 ## Not in scope
 

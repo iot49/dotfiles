@@ -1096,11 +1096,18 @@ if [ -n "${LANDED// /}" ]; then
     echo "A finding that cannot name a file is not an issue: leave it in the"
     echo "report above. Do not suggest a label and do not claim a finding is"
     echo "ready to implement — everything filed here is triaged by a person."
+    echo "The loop files the lines of this block after you finish; nothing"
+    echo "else is filed, so the report must not say a finding was filed."
     echo "<findings></findings>"
   } > "$RV"
   RVOUT=$(sb "$RV" | jget result)
+  echo "$RVOUT" > "$WORKDIR/review-reply-$TS.txt"
   SPEC_FAILS=$(echo "$RVOUT" | extract_tag spec-failures)
   FINDINGS=$(echo "$RVOUT" | extract_tag findings)
+  # An absent block and an empty one read the same to extract_tag; only the
+  # empty one means "no findings" (#634: the report said "Filed" four times
+  # and the reply carried no block).
+  echo "$RVOUT" | grep -q '<findings>' || { NO_FINDINGS_BLOCK=1; say "the review's reply has no <findings> block"; }
   [ -f "$REVIEW" ] || echo "$RVOUT" > "$REVIEW"
   say "spec failures: '${SPEC_FAILS:-none}'"
 fi
@@ -1345,7 +1352,7 @@ BODY="$WORKDIR/summary-$TS.md"
   for n in $DROPPED; do
     echo "- #$n landed, but the screen flagged its \`<handoff>\`/\`<rulings>\` notes, so they were **cut** and no later agent saw them. Read \`$WORKDIR/judge-result-$n*.txt\` — either the note was fair and something about this repo needs fixing, or the agent was captured and the diff wants a second look."
   done
-  [ -z "${SPEC_FAILS// /}" ] && [ -z "${SCOPE// /}" ] && [ -z "${DROPPED// /}" ] && [ ! -s "$FAILED" ] && [ "$LANDING" = merged ] \
+  [ -z "${SPEC_FAILS// /}" ] && [ -z "${SCOPE// /}" ] && [ -z "${DROPPED// /}" ] && [ ! -s "$FAILED" ] && [ -z "${NO_FINDINGS_BLOCK:-}" ] && [ "$LANDING" = merged ] \
     && echo "- Nothing. Everything landed, merged via $PR_URL, and is closed."
   if [ -n "${LANDED// /}" ] && [ "$SKIPS_PRE" != unknown ] && [ "$SKIPS_POST" != unknown ] \
      && [ "$SKIPS_PRE" != "$SKIPS_POST" ]; then
@@ -1354,6 +1361,8 @@ BODY="$WORKDIR/summary-$TS.md"
   for u in $FILED; do
     echo "- Filed from the range review: $u (\`needs-triage\` — nothing has judged it ready)."
   done
+  [ -n "${NO_FINDINGS_BLOCK:-}" ] \
+    && echo "- The range review's reply had no \`<findings>\` block, so nothing was filed from it, whatever the report below says. File its findings by hand. Reply: \`$WORKDIR/review-reply-$TS.txt\`."
   echo
   echo "## What landed"
   if [ -n "${LANDED// /}" ]; then
