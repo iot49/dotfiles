@@ -15,6 +15,11 @@ project's own CLAUDE.md.
 ## Editor
 - VS Code is the default editor (`code`).
 
+## Git
+- The sandbox blocks writes to `.git/config`. Push with
+  `git push origin <branch>`, not `-u` or `--set-upstream-to`; pass
+  `--head <branch>` to `gh pr create`.
+
 ## Secrets
 - `~` is a public git repo. Never put a secret in a config file, `.env`, or
   anything under `~` -- including editor settings, which get committed.
