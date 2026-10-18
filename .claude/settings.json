@@ -24,6 +24,7 @@
       "Bash(git checkout -- .*)",
       "Bash(git restore .*)",
       "Bash(git branch -D*)",
+      "Bash(git -C * branch -D*)",
       "Bash(rm -rf /*)",
       "Bash(rm -rf ~/*)"
     ],
@@ -105,7 +106,8 @@
         "*.githubusercontent.com",
         "gleis49.org",
         "*.gleis49.org"
-      ]
+      ],
+      "allowLocalBinding": true
     },
     "filesystem": {
       "allowWrite": [
