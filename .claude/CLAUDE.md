@@ -31,8 +31,9 @@ project's own CLAUDE.md.
   ```
 - If a command needs a secret, prefer `op run` over exporting it, so it never
   lands in shell history or a dotfile.
-- In Claude Code, `op` runs as the "Claude Code" service account
-  (`OP_SERVICE_ACCOUNT_TOKEN`, set by the `claude` function in `~/.zshrc`).
+- In Claude Code, `op` runs as the "Claude Code" service account (the `op`
+  function in `~/.zshrc` sets `OP_SERVICE_ACCOUNT_TOKEN` when `CLAUDECODE`
+  is set).
   It reads only the `rails49` vault, read-only. Ask the user to move any
   other secret there.
 - In a plain terminal, `op` uses the desktop app and unlocks with Touch ID.
