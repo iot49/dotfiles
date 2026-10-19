@@ -16,15 +16,6 @@
       "Read(./**/id_rsa*)",
       "Read(~/.ssh/**)",
       "Read(//**/.aws/credentials)",
-      "Bash(git push --force*)",
-      "Bash(git push -f *)",
-      "Bash(git clean*)",
-      "Bash(git reset --hard*)",
-      "Bash(git checkout .*)",
-      "Bash(git checkout -- .*)",
-      "Bash(git restore .*)",
-      "Bash(git branch -D*)",
-      "Bash(git -C * branch -D*)",
       "Bash(rm -rf /*)",
       "Bash(rm -rf ~/*)"
     ],
@@ -60,15 +51,6 @@
       "serverName": "claude.ai Tripadvisor"
     },
     {
-      "serverName": "claude.ai Gmail"
-    },
-    {
-      "serverName": "claude.ai Google Drive"
-    },
-    {
-      "serverName": "claude.ai Google Calendar"
-    },
-    {
       "serverName": "claude.ai Cloudflare Developer Platform"
     }
   ],
@@ -77,7 +59,8 @@
     "command": "~/.claude/statusline.sh"
   },
   "enabledPlugins": {
-    "mattpocock-skills@mattpocock": true
+    "mattpocock-skills@mattpocock": true,
+    "clangd-lsp@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
     "mattpocock": {
@@ -121,11 +104,15 @@
   },
   "feedbackDrafts": "off",
   "effortLevel": "high",
+  "modelSettings": {
+    "claude-opus-5-5": {
+      "effortLevel": "high"
+    }
+  },
   "skipDangerousModePermissionPrompt": true,
   "theme": "light",
   "autoCompactEnabled": true,
   "switchModelsOnFlag": false,
-  "remoteControlAtStartup": false,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
   "autoMode": {
@@ -159,5 +146,6 @@
       "**Trusted repo**: iot49/dotfiles (`~`, remote `origin`) — PUBLIC repo; only this repo's own work belongs here, and per its own CLAUDE.md, secrets are never committed regardless of visibility",
       "**Org-specific CLIs**: None configured — `op` (1Password CLI) is used routinely for secret retrieval per CLAUDE.md; `balena` seen frequently in shell history (127×) but not corroborated in-session"
     ]
-  }
+  },
+  "remoteControlAtStartup": true
 }
