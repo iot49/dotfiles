@@ -1,6 +1,6 @@
 ---
 name: implement-loop
-description: Launch an unattended Ralph-style batch over ready-for-agent issues — cold sandboxed agent per issue, tool-less screening judge on every issue body and on the notes each agent leaves for the next, host-side gates and side effects, one review over the whole range, PR auto-merged on CI green, results as closed issues plus a needs-triage summary issue.
+description: Launch an unattended Ralph-style batch over ready-for-agent issues — cold sandboxed agent per issue, tool-less screening judge on every issue body and on the notes each agent leaves for the next, host-side gates and side effects, one review over the whole range, PR auto-merged on CI green, results as closed issues plus a loop-report summary issue.
 disable-model-invocation: true
 ---
 
@@ -77,8 +77,8 @@ Tell the user, in one pass, without asking anything:
   information about a run that has already started, not a proposal;
 - that results arrive on GitHub: merged issues closed, failures and
   screened-out issues relabelled `ready-for-human` with the reason as a
-  comment, and one `needs-triage` summary issue whose top section is the
-  action list;
+  comment, and one `loop-report` summary issue whose top section is the
+  action list, closed at once when the list holds nothing to act on;
 - that the run works in its own git worktree under `.implement-loop/tree`,
   so the checkout it was started from stays on the default branch and is
   free to use while the batch runs;

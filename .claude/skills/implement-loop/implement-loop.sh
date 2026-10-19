@@ -41,8 +41,8 @@
 # After the batch:
 #   one review over the whole range -> hold check (protected paths, deleted
 #   tests) -> push branch, open PR -> auto-merge on CI green, wait -> close
-#   what merged -> file a summary issue labelled needs-triage, action items
-#   first -> with no arguments and a merged batch, re-query the label and
+#   what merged -> file a summary issue labelled loop-report, action items
+#   first, closed at once when none are left -> with no arguments and a merged batch, re-query the label and
 #   go again while anything new is runnable.
 #
 # Main is never pushed directly. The ruleset applies to everyone, so even a
@@ -1093,6 +1093,14 @@ if [ -n "${LANDED// /}" ]; then
     echo "title naming the component, and a sentence saying what to change and"
     echo "why. Empty if there are none."
     echo
+    echo "A finding deserves an issue only if it is a regression against"
+    echo "$START_SHA, or if the program's ordinary use reaches it: a person"
+    echo "using the screens, or another app calling the interface as its"
+    echo "contract describes. A gap that only a hand-built request, a"
+    echo "contrived sequence of presses or a reading of the prose reaches stays"
+    echo "in the report above. Each fix is new code for the next review, so"
+    echo "filing every observation makes each batch create the next."
+    echo
     echo "A finding that cannot name a file is not an issue: leave it in the"
     echo "report above. Do not suggest a label and do not claim a finding is"
     echo "ready to implement — everything filed here is triaged by a person."
@@ -1232,7 +1240,10 @@ if [ -n "${LANDED// /}" ]; then
       LANDING=held
       gh pr edit "$PR_URL" --add-label ready-for-human 2>/dev/null || true
     else
-      gh pr merge --auto --rebase "$PR_URL" || say "could not arm auto-merge"
+      # GitHub refuses to arm auto-merge on a PR that is already mergeable
+      # (CI finished while the PR was a draft), so merge it outright then.
+      gh pr merge --auto --rebase "$PR_URL" || gh pr merge --rebase "$PR_URL" \
+        || say "could not arm auto-merge"
       say "waiting for CI and merge (up to ${CI_TIMEOUT}s)"
       DEADLINE=$(( $(date +%s) + CI_TIMEOUT ))
       LANDING=timeout
@@ -1306,7 +1317,7 @@ done
 # summary issue — action items first, so the morning starts at the top
 # ---------------------------------------------------------------------------
 say "summary issue"
-gh label create needs-triage --description "Maintainer needs to evaluate this issue" --color FBCA04 2>/dev/null || true
+gh label create loop-report --description "implement-loop batch summary" --color C5DEF5 2>/dev/null || true
 
 BODY="$WORKDIR/summary-$TS.md"
 {
@@ -1389,9 +1400,13 @@ BODY="$WORKDIR/summary-$TS.md"
   echo "_Log: \`$LOG\` (local, not committed)._"
 } > "$BODY"
 
-SUMMARY_URL=$(gh issue create --label needs-triage \
+SUMMARY_URL=$(gh issue create --label loop-report \
   --title "implement-loop $TS: $(echo $ORDER | wc -w | tr -d ' ') issues attempted, $LANDING" \
   --body-file "$BODY") || SUMMARY_URL="(issue creation failed — summary at $BODY)"
+# Close the report when its action list holds nothing to act on.
+[ "$LANDING" = merged ] && [ -z "${SPEC_FAILS// /}${RISKY// /}${DROPPED// /}${NO_FINDINGS_BLOCK:-}" ] \
+  && [ ! -s "$FAILED" ] && case "$SUMMARY_URL" in https://*) true ;; *) false ;; esac \
+  && { gh issue close "$SUMMARY_URL" --comment "Nothing in this report needs action." || true; }
 
 say "done. summary: $SUMMARY_URL"
 

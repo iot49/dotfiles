@@ -117,6 +117,7 @@ gh api -X PATCH "repos/$REPO" -F allow_auto_merge=true -F allow_rebase_merge=tru
 gh label create ready-for-agent --description "implement-loop may take this" --color 0E8A16 2>/dev/null || true
 gh label create ready-for-human --description "implement-loop gave up or held this" --color D93F0B 2>/dev/null || true
 gh label create needs-triage --description "Maintainer needs to evaluate this issue" --color FBCA04 2>/dev/null || true
+gh label create loop-report --description "implement-loop batch summary" --color C5DEF5 2>/dev/null || true
 
 say "done. $DEFAULT now only moves by PR with the 'ci' check green — for you as well:"
 echo "    git push -u origin <branch> && gh pr create --fill && gh pr merge --auto --rebase"

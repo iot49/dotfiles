@@ -50,7 +50,7 @@ after        one review over the whole range (start-sha...HEAD)
              → not held: arm auto-merge (rebase), wait for CI + merge
              → merged: close issues that landed clean; else relabel
                ready-for-human with the PR link
-             → summary issue, labelled needs-triage, action items first
+             → summary issue, labelled loop-report, action items first
 again        no arguments + merged: re-query ready-for-agent; anything new
              or newly unblocked starts another batch (IL_ONCE=1 to stop)
 ```
@@ -179,7 +179,8 @@ script. No gate, no run: a batch with no gate has nobody but the author of the
 code deciding it passed.
 
 Labels used: `ready-for-agent` (input), `ready-for-human` (failures/holds),
-`needs-triage` (summary issue); all created by setup.
+`needs-triage` (issues filed from the review), `loop-report` (summary issue);
+all created by setup.
 
 ## Usage
 
@@ -222,8 +223,9 @@ survives the failure path's `git clean -fd`.
   every issue in it left open with the link, relabelled `ready-for-human`.
 - Issues that landed with their notes cut: closed like any other, but named
   in the summary's action list with the verdict to read.
-- One `needs-triage` summary issue whose **first section is the action list**:
-  what needs a human, or "Nothing" when everything merged and is closed.
+- One `loop-report` summary issue whose **first section is the action list**:
+  what needs a human, or "Nothing" when everything merged and is closed. The
+  issue is closed at once when the list holds nothing to act on.
   Below it: what landed, the rulings the batch made, and the full review.
 
 ## Known holes
