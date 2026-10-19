@@ -104,5 +104,6 @@
     "**/__pycache__": true
 },
 "terminal.integrated.mouseWheelScrollSensitivity": 3,
-"terminal.integrated.gpuAcceleration": "off"
+"terminal.integrated.gpuAcceleration": "off",
+"claudeCode.preferredLocation": "panel"
 }
