@@ -1,5 +1,5 @@
 # cd path
-cdpath=($HOME $HOME/iot $HOME/Documents $HOME/Dropbox)
+cdpath=($HOME $HOME/rails49 $HOME/iot $HOME/Documents $HOME/Dropbox)
 setopt NO_CASE_GLOB   # case insensitive completion
 setopt AUTO_CD        # cd optional
 
@@ -59,7 +59,7 @@ run_if "$HOME/.zsh_alias"
 # cd aliases
 alias iot='cd ~/iot'
 alias blog49='cd ~/iot/blog49'
-alias rails49='cd ~/iot/rails49'
+alias rails49='cd ~/rails49'
 alias blocks49='cd ~/iot/blocks49'
 
 # Git Separation Ceiling
