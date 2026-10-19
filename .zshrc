@@ -88,3 +88,10 @@ esac
 export PATH="$PATH:/Users/boser/.lmstudio/bin"
 # End of LM Studio CLI section
 
+
+# Claude Code: run op as the "Claude Code" service account (rails49 vault, read-only).
+# Token lives in the login Keychain, item op-service-account.
+claude() {
+  OP_SERVICE_ACCOUNT_TOKEN="$(security find-generic-password -a "$USER" -s op-service-account -w)" \
+    command claude "$@"
+}
