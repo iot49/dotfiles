@@ -11,6 +11,10 @@
 # Usage:
 #   implement-loop.sh [issue numbers...]
 #   No arguments: every open issue labelled ready-for-agent.
+#   implement-loop.sh --status
+#   Whether a run in this checkout is alive, its last steps, its PR and
+#   summary issue. Starts nothing. Run it with the sandbox off: a sandboxed
+#   shell is denied `ps` and `kill -0`.
 #
 # Host requirements: git, gh (authenticated), python3, Docker Desktop with
 # sandboxes, ONE prior interactive `docker sandbox run claude` in this
@@ -69,16 +73,48 @@ set -u  # not -e: one failing issue must not kill the batch; errors are handled
 SELFDIR=$(cd "$(dirname "$0")" && pwd)
 RESUME=0
 FORCE_NEW=0
+STATUS=0
 _args=""
 for _a in "$@"; do
   case "$_a" in
     --resume)    RESUME=1 ;;
     --force-new) FORCE_NEW=1 ;;
+    --status)    STATUS=1 ;;
     *)           _args="$_args $_a" ;;
   esac
 done
 # shellcheck disable=SC2086
 set -- $_args
+
+# Without this, "check the loop" was answered by piecing together the log,
+# state.json and `ps` each time, and once wrongly: a sandboxed shell is denied
+# `kill -0` and `ps`, which read as "exited" for a run that is alive. So a
+# denied `ps` is reported as such. The pid file is written by a run once
+# Docker answers.
+if [ "$STATUS" = 1 ]; then
+  dir="$PWD/.implement-loop"
+  pid=$(cat "$dir/pid" 2>/dev/null)
+  if ! ps -p $$ > /dev/null 2>&1; then
+    echo "unknown whether it runs: ps is denied here; rerun with the sandbox off"
+  elif [ -n "$pid" ] && ps -p "$pid" -o command= 2>/dev/null | grep -q implement-loop; then
+    echo "running: pid $pid"
+  else
+    echo "not running"
+  fi
+  log=$(ls -t "$dir"/run-*.log 2>/dev/null | head -1)
+  [ -n "$log" ] || { echo "no run log in $dir"; exit 0; }
+  echo "log: $log (last written $(date -r "$log" '+%Y-%m-%d %H:%M'))"
+  [ -f "$dir/state.json" ] && python3 "$SELFDIR/il-state.py" read "$dir/state.json" \
+    | grep -E '^ST_(PHASE|BRANCH|LANDED)='
+  echo "last steps:"
+  grep '^== ' "$log" | tail -5 | sed 's/^/  /'
+  pr=$(grep -Eo 'https://github.com/[^ )]+/pull/[0-9]+' "$log" | tail -1)
+  [ -n "$pr" ] && echo "PR: $pr $(gh pr view "$pr" --json state,isDraft,mergeStateStatus \
+    --jq '.state + (if .isDraft then " draft" else "" end) + " " + .mergeStateStatus' 2>/dev/null)"
+  summary=$(sed -n 's/^== done\. summary: //p' "$log" | tail -1)
+  [ -n "$summary" ] && echo "summary: $summary $(gh issue view "$summary" --json state --jq .state 2>/dev/null)"
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # setup
@@ -175,6 +211,7 @@ if ! DOCKER_ERR=$(docker version --format '{{.Server.Version}}' 2>&1); then
   } | tee -a "$LOG" >&2
   exit 1
 fi
+echo $$ > "$WORKDIR/pid"   # read by --status
 
 exec > >(tee -a "$LOG") 2>&1
 

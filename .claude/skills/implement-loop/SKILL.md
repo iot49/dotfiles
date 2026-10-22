@@ -49,7 +49,7 @@ inside it the run dies in its first seconds, before the container it needs
 exists.
 
 ```
-mkdir -p .implement-loop
+mkdir -p .implement-loop && touch .implement-loop/launch
 nohup bash ~/.claude/skills/implement-loop/implement-loop.sh <args> \
   > /dev/null 2>&1 &
 echo $!
@@ -57,10 +57,26 @@ echo $!
 
 The script tees its own log to `.implement-loop/run-<timestamp>.log`.
 
-Confirm it got past the Docker smoke test before reporting: the log's first
-lines are `== pre-flight`, `== gate:` and `== sandbox: <container id>`. A log
-that stays empty means the launch was sandboxed after all. That is the one
-thing to check; do not otherwise watch the run.
+Confirm it got past the Docker smoke test before reporting, with this command
+as it stands (foreground, sandbox on, `timeout: 180000`). It reads only a log
+written since the launch, so an older run's log cannot answer for this one:
+
+```
+for i in $(seq 75); do
+  log=$(find .implement-loop -maxdepth 1 -name 'run-*.log' -newer .implement-loop/launch | head -1)
+  [ -n "$log" ] && grep -qE '^(== sandbox:|ABORT)' "$log" && break
+  sleep 2
+done
+echo "${log:-no log since the launch}"; [ -n "$log" ] && head -20 "$log"
+```
+
+Started means the lines `== pre-flight`, `== gate:` and
+`== sandbox: <container id>`. An `ABORT` line is a failed launch: report it.
+No log means the launch was sandboxed after all. That is the one thing to
+check; do not otherwise watch the run.
+
+`implement-loop.sh --status`, run with the sandbox off, answers later
+questions about a run.
 
 On startup it prunes per-run artifacts in `.implement-loop/` older than
 `IL_KEEP_DAYS` (default 14). `rulings.md` is never pruned; what happened to an
