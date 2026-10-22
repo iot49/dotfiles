@@ -54,21 +54,31 @@ jobs:
         if: hashFiles('pyproject.toml') != ''
       - run: uv sync
         if: hashFiles('pyproject.toml') != ''
+      # action-setup fails with no pnpm version, and also when given one
+      # beside package.json's packageManager; pass one only when that is absent
+      - id: pnpm
+        if: hashFiles('pnpm-lock.yaml') != ''
+        run: grep -q '"packageManager"' package.json || echo "version=10" >> "\$GITHUB_OUTPUT"
       - uses: pnpm/action-setup@v4
         if: hashFiles('pnpm-lock.yaml') != ''
+        with:
+          version: \${{ steps.pnpm.outputs.version }}
       - uses: actions/setup-node@v4
         if: hashFiles('package.json') != ''
         with:
           node-version: 22
       - run: pnpm install --frozen-lockfile
         if: hashFiles('pnpm-lock.yaml') != ''
+      - run: npm ci
+        if: hashFiles('package-lock.json') != ''
       - name: gate
         run: |
           cmd=\$(sed -n 's/^ci:[[:space:]]*//p' CLAUDE.md 2>/dev/null | head -1)
           [ -n "\$cmd" ] || cmd=\$(sed -n 's/^[Gg]ate:[[:space:]]*//p' CLAUDE.md 2>/dev/null | head -1)
           [ -n "\$cmd" ] || { [ -x scripts/check.sh ] && cmd=./scripts/check.sh; }
           [ -n "\$cmd" ] || { grep -qE '^check:' Makefile 2>/dev/null && cmd="make check"; }
-          [ -n "\$cmd" ] || { echo "no ci:/gate: line in CLAUDE.md, no scripts/check.sh, no make check"; exit 1; }
+          [ -n "\$cmd" ] || { node -e 'process.exit(require("./package.json").scripts?.check ? 0 : 1)' 2>/dev/null && cmd="npm run check"; }
+          [ -n "\$cmd" ] || { echo "no ci:/gate: line in CLAUDE.md, no scripts/check.sh, no make check, no npm check script"; exit 1; }
           echo "+ \$cmd"
           bash -c "\$cmd"
 YAML
@@ -120,4 +130,4 @@ gh label create needs-triage --description "Maintainer needs to evaluate this is
 gh label create loop-report --description "implement-loop batch summary" --color C5DEF5 2>/dev/null || true
 
 say "done. $DEFAULT now only moves by PR with the 'ci' check green — for you as well:"
-echo "    git push -u origin <branch> && gh pr create --fill && gh pr merge --auto --rebase"
+echo "    git push origin <branch> && gh pr create --fill --head <branch> && gh pr merge --auto --rebase"

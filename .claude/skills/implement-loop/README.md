@@ -23,6 +23,7 @@ cold context per unit of work, bash as the loop, Docker sandbox.
 | `SKILL.md`                | `/implement-loop` — thin launcher so the interface matches the other skills. Checks the repo, `nohup`s the script without asking, confirms it started, reports the log path. |
 | `il-state.py`             | Reads and writes `state.json`, the record `--resume` continues from. |
 | `test-early-abort.sh`     | Checks that the aborts before the run's own log still leave a log the launcher can read. |
+| `test-gate-parity.sh`     | Checks that the loop and the CI workflow setup writes pick the same gate command. |
 
 ## What one run does
 
@@ -201,7 +202,7 @@ Setup writes `.github/workflows/ci.yml` (skipped if present; the required
 check is the job named `ci`), commits and pushes it, then creates the ruleset
 and flips auto-merge / rebase-merge / delete-branch-on-merge. The workflow
 sets `CI=true` and runs the `ci:` line from `CLAUDE.md`, falling back to
-`gate:`, `scripts/check.sh`, `make check`. Tests that need local resources
+`gate:`, `scripts/check.sh`, `make check`, an npm `check` script. Tests that need local resources
 (hardware, local services, secrets) skip themselves when `CI` is set; that is
 the whole contract between the two gates.
 
