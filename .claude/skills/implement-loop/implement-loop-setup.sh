@@ -12,6 +12,7 @@
 #      EMPTY — it applies to you too. The host script pushes with your
 #      credential; a rule you could bypass is a rule the script could bypass.
 #   3. Repo settings: auto-merge on, rebase merge on, delete branch on merge.
+#   4. Labels: ready-for-agent, ready-for-human, needs-triage, loop-report.
 #
 # Idempotent: re-running skips what exists.
 #
@@ -29,11 +30,17 @@ DEFAULT=$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)
 [ "$(git branch --show-current)" = "$DEFAULT" ] || die "switch to $DEFAULT first"
 [ -z "$(git status --porcelain)" ] || die "working tree not clean"
 git pull --rebase
+# the push below would carry them to $DEFAULT, past CI
+[ -z "$(git rev-list "origin/$DEFAULT..HEAD")" ] \
+  || die "$DEFAULT has commits not on origin. Push or drop them first, so this pushes only the workflow."
 
 # ---- 1. workflow -----------------------------------------------------------
 WF=.github/workflows/ci.yml
 if [ -f "$WF" ]; then
-  say "$WF exists, leaving it alone (the required check is the job named 'ci')"
+  # checked before the ruleset exists: after it, a missing job blocks every PR
+  grep -qE '^[[:space:]]+(ci:|name:[[:space:]]*ci)[[:space:]]*$' "$WF" \
+    || die "$WF has no job named 'ci'. The ruleset requires that check, so every PR would wait for it forever. Name a job ci, or remove the file to have one written, then re-run."
+  say "$WF exists, leaving it alone (it has the job 'ci' the ruleset requires)"
 else
   say "writing $WF"
   mkdir -p .github/workflows
@@ -84,7 +91,15 @@ jobs:
 YAML
   git add "$WF"
   git commit -q -m "ci: gate on every PR (implement-loop-setup)"
-  git push || die "push failed — is $DEFAULT already protected? Open a PR for $WF by hand, then re-run."
+  # a refused push must not leave the commit on $DEFAULT: a re-run would find
+  # the file and skip the workflow that never reached the remote
+  git push origin "$DEFAULT" || {
+    git branch -f implement-loop-ci HEAD
+    git reset -q --hard "origin/$DEFAULT"
+    die "push to $DEFAULT refused — is it already protected? The workflow commit is on branch implement-loop-ci and $DEFAULT is back at origin. Land it with
+    git push origin implement-loop-ci && gh pr create --fill --head implement-loop-ci
+merge that PR once its ci check is green, then re-run."
+  }
 fi
 
 # ---- 2. ruleset -----------------------------------------------------------

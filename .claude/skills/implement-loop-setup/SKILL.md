@@ -38,9 +38,8 @@ Foreground; it takes seconds.
 ## After running
 
 1. If the script printed `ci.yml exists, leaving it alone`, it pushed
-   nothing and no run was triggered. Confirm the file has a job named `ci`:
-   the ruleset requires that check, and without the job every PR waits for
-   it forever. Then go to step 2; the first PR is the first run.
+   nothing and no run was triggered. Go to step 2; the first PR is the first
+   run.
 
    Otherwise its push of the workflow triggered CI on the default branch.
    Watch that run: `gh run list --workflow ci --commit $(git rev-parse HEAD)

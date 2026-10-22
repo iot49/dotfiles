@@ -24,6 +24,7 @@ cold context per unit of work, bash as the loop, Docker sandbox.
 | `il-state.py`             | Reads and writes `state.json`, the record `--resume` continues from. |
 | `test-early-abort.sh`     | Checks that the aborts before the run's own log still leave a log the launcher can read. |
 | `test-gate-parity.sh`     | Checks that the loop and the CI workflow setup writes pick the same gate command. |
+| `test-setup-push.sh`      | Checks what setup pushes and leaves behind when it stops: refused push, unpushed commits, a `ci.yml` without a `ci` job. |
 
 ## What one run does
 
