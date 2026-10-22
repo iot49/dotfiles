@@ -113,6 +113,7 @@
   "theme": "light",
   "autoCompactEnabled": true,
   "switchModelsOnFlag": false,
+  "remoteControlAtStartup": true,
   "inputNeededNotifEnabled": true,
   "agentPushNotifEnabled": true,
   "autoMode": {
@@ -146,6 +147,5 @@
       "**Trusted repo**: iot49/dotfiles (`~`, remote `origin`) — PUBLIC repo; only this repo's own work belongs here, and per its own CLAUDE.md, secrets are never committed regardless of visibility",
       "**Org-specific CLIs**: None configured — `op` (1Password CLI) is used routinely for secret retrieval per CLAUDE.md; `balena` seen frequently in shell history (127×) but not corroborated in-session"
     ]
-  },
-  "remoteControlAtStartup": true
+  }
 }
