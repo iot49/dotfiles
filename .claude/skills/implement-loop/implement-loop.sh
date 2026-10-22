@@ -773,7 +773,7 @@ for NN in $ORDER; do
     echo "first. \`gh\` and the network are NOT available here; everything you"
     echo "need is in the working directory."
     echo
-    echo "Then, if this repo has them, read CONTEXT.md for the vocabulary and"
+    echo "Then, if this repo has them, read GLOSSARY.md for the vocabulary and"
     echo "any ADR under docs/adr/ touching the area — use the glossary's terms,"
     echo "not its listed synonyms."
     echo
@@ -867,7 +867,16 @@ for NN in $ORDER; do
   check_issue() {
     SCOPE_THIS=""
     if ! run_gate "$WORKDIR/gate-$NN.txt"; then
-      { echo "The gate (\`$GATE\`) failed on your work:"; echo; tail -60 "$WORKDIR/gate-$NN.txt"; } \
+      # A gate that runs several tools prints an early tool's failure far
+      # above its last 60 lines; on #816 the tail showed vitest and cut off
+      # pytest, and the repair round fixed one of the two. So the lines that
+      # name a failure come first, wherever they are, then the tail.
+      { echo "The gate (\`$GATE\`) failed on your work. Its whole output is"
+        echo "$WORKDIR/gate-$NN.txt; read it if what follows is not enough."
+        echo; echo "Lines that report a failure:"; echo
+        grep -n -i -E 'fail|error' "$WORKDIR/gate-$NN.txt" | head -40
+        echo; echo "The end of the output:"; echo
+        tail -60 "$WORKDIR/gate-$NN.txt"; } \
         > "$WORKDIR/failure-$NN.txt"
       return 1
     fi
@@ -1167,15 +1176,20 @@ if [ -n "${LANDED// /}" ]; then
   git diff "$START_SHA"..HEAD -- CLAUDE.md | grep -qE '^[-+]([Gg]ate|ci):' \
     && HOLD="${HOLD}CLAUDE.md gate:/ci: line "
   TESTDEL=$(git diff --numstat "$START_SHA"..HEAD | python3 -c '
-import re, sys
+import re, subprocess, sys
 pat = re.compile(r"(^|/)(tests?|__tests__)/|(^|/)test_[^/]*\.py$|_test\.py$|\.(test|spec)\.[cm]?[jt]sx?$")
+def empty_at_head(f):
+    # numstat writes a rename as "dir/{old => new}" or "old => new"
+    f = re.sub(r"\{[^{}]* => ([^{}]*)\}", r"\1", f).split(" => ")[-1].replace("//", "/")
+    r = subprocess.run(["git", "show", "HEAD:" + f], capture_output=True, text=True)
+    return r.returncode != 0 or not r.stdout.strip()
 net, gone = 0, []
 for line in sys.stdin:
     a, d, f = line.rstrip("\n").split("\t", 2)
     if not pat.search(f) or a == "-": continue
     a, d = int(a), int(d)
     net += a - d
-    if a == 0 and d > 0: gone.append(f)
+    if a == 0 and d > 0 and empty_at_head(f): gone.append(f)
 if gone: print("test files reduced to nothing: " + " ".join(gone))
 elif net < 0: print("net %d lines removed from tests" % -net)
 ')
@@ -1270,12 +1284,18 @@ if [ -n "${LANDED// /}" ]; then
 fi
 say "landing: $LANDING"
 
-# out of the worktree and back to the main checkout, which never left $DEFAULT.
-# The worktree goes; the batch branch stays around unless it merged.
+# out of the worktree and back to the main checkout. The worktree goes; the
+# batch branch stays around unless it merged. The checkout is free to use
+# during a run, so it may be on another branch with work in progress: then
+# only the $DEFAULT ref moves, and the checkout is left alone.
 cd "$ROOT"
 git worktree remove --force "$WT" 2>/dev/null || say "could not remove the worktree at $WT"
 if [ "$LANDING" = merged ]; then
-  git pull --rebase
+  if [ "$(git branch --show-current)" = "$DEFAULT" ]; then
+    git pull --rebase || say "could not pull $DEFAULT into the checkout"
+  else
+    git fetch origin "$DEFAULT:$DEFAULT" || say "could not fast-forward $DEFAULT"
+  fi
   git branch -D "$BRANCH" >/dev/null
 fi
 
