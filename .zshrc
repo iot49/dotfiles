@@ -99,3 +99,7 @@ op() {
     command op "$@"
   fi
 }
+
+# Inside Claude Code, an unmatched glob such as `grep --include=*.py` is passed
+# through as text instead of failing the command.
+[[ -n $CLAUDECODE ]] && setopt NO_NOMATCH
