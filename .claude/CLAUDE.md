@@ -19,6 +19,14 @@ project's own CLAUDE.md.
 - The sandbox blocks writes to `.git/config`. Push with
   `git push origin <branch>`, not `-u` or `--set-upstream-to`; pass
   `--head <branch>` to `gh pr create`.
+- Run `git branch -D` with the sandbox disabled, so git can drop the
+  branch's `.git/config` sections.
+
+## Shell
+- The Bash tool runs zsh: `$var` does not split into words, and a glob that
+  matches nothing is an error. Quote globs.
+- Sandboxed and unsandboxed commands see different `$TMPDIR`s. Write logs of
+  unsandboxed commands to the scratchpad directory.
 
 ## Secrets
 - `~` is a public git repo. Never put a secret in a config file, `.env`, or
