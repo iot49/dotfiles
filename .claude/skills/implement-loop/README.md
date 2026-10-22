@@ -20,7 +20,9 @@ cold context per unit of work, bash as the loop, Docker sandbox.
 | `implement-loop.sh`       | The whole machine. Self-contained; runnable without the skill. |
 | `implement-loop-setup.sh` | Once per repo: CI workflow, branch ruleset, auto-merge, labels. The main script refuses to run until this has been done. |
 | `../implement-loop-setup/SKILL.md` | `/implement-loop-setup` — front door for the setup script: pre-checks, go-ahead, watches the first CI run. |
-| `SKILL.md`                | `/implement-loop` — thin launcher so the interface matches the other skills. Confirms the batch, `nohup`s the script, reports the log path. |
+| `SKILL.md`                | `/implement-loop` — thin launcher so the interface matches the other skills. Checks the repo, `nohup`s the script without asking, confirms it started, reports the log path. |
+| `il-state.py`             | Reads and writes `state.json`, the record `--resume` continues from. |
+| `test-early-abort.sh`     | Checks that the aborts before the run's own log still leave a log the launcher can read. |
 
 ## What one run does
 
@@ -40,11 +42,13 @@ per issue    fetch issue body + comments to a file (host); an empty body
              → gate runs on the host: exit code is the verdict
              → second cold agent verifies the diff against the issue body
              → third cold agent audits the diff for what the issue did
-               NOT ask for (EXTRA = fail)
-             → one repair round via --resume into the SAME session
+               NOT ask for: reported, never blocks
+             → gate or verifier failed: one repair round via --resume
+               into the SAME session
              → landed, or: reset --hard, comment the failure on the
                issue, relabel ready-for-human, skip its dependents
 after        one review over the whole range (start-sha...HEAD)
+             → its findings filed as issues labelled needs-triage
              → hold check: protected paths, gate lines, deleted tests
              → push branch, open PR
              → not held: arm auto-merge (rebase), wait for CI + merge
@@ -111,9 +115,16 @@ for?" — network calls, new dependencies, edits to CI/config/tests, encoded
 strings, unrelated files, import-time side effects — with the instruction to
 assume the author may be hiding something. Gate-green code that also does
 something extra is exactly what CI cannot see, and the two questions are
-easier to answer well separately than as one "review". An EXTRA verdict goes
-through the normal repair round (remove it, or justify it in `<rulings>`);
-a second EXTRA fails the issue.
+easier to answer well separately than as one "review".
+
+**The audit reports; it does not veto.** Its verdict is CLEAN, SCOPE (more
+than was asked, done in the open) or RISK (network, dependencies, weakened
+checks and the like). Every verdict but CLEAN lands the work and puts the
+findings on the issue and in the summary's action list, RISK first. The veto
+was removed after it reset three issues' worth of gate-green, verified work,
+and every finding a human then read was either correct work or a defect in
+the issue. The changes with real blast radius are held by the hold check,
+which needs no judgement.
 
 **Cold context per issue** (Ralph's property). The second issue is not
 implemented through the lens of the first, and the final review starts from
@@ -147,6 +158,27 @@ returns a `session_id`; the repair prompt goes back into that session with
 second cold attempt. One round only, then give up — two of three landing beats
 zero, and an unbounded retry spends the night on the issue that is fighting
 you.
+
+**A stopped run resumes; it does not restart.** `.implement-loop/state.json`
+is written after every issue and at each phase boundary, and removed when the
+run reaches its end. A plain run refuses to start while it records an
+unfinished run. `--resume` reuses the branch with the worktree at its tip,
+skips issues already landed or failed, reuses the draft PR, and goes straight
+to the phase it stopped in; `--force-new` discards it. Before this, the next
+run force-removed the worktree and implemented the same still-open issues a
+second time. Running out of quota is the usual cause of a stop.
+
+**Review findings are filed as `needs-triage`, never `ready-for-agent`.**
+The range review emits one line per finding (file, title, what to change and
+why), and each becomes an issue linked from the summary. `ready-for-agent`
+says every decision is made; a follow-up the loop promoted itself would run
+unattended in the next batch on the word of the review that found it. A
+finding that cannot name a file stays in the report. A reply with no
+`<findings>` block is reported as such, not read as "no findings".
+
+**Skipped tests are counted.** The summary carries the gate's skip count at
+pre-flight and after the last issue. A difference means the batch changed
+what runs, which a passing gate does not show.
 
 ## Setup
 
@@ -189,12 +221,16 @@ From a Claude Code session in the target repo:
 ```
 /implement-loop            # the whole ready-for-agent backlog
 /implement-loop 42 43 51   # exactly these
+/implement-loop --resume   # continue a run that stopped early
 ```
 
 Or directly, no LLM in the outer loop at all:
 
 ```sh
 ~/.claude/skills/implement-loop/implement-loop.sh 42 43 51
+implement-loop.sh --resume      # or --force-new to discard the stopped run
+implement-loop.sh --status      # alive or not, last steps, PR, summary issue;
+                                # run with the sandbox off (it needs ps)
 ```
 
 Environment:
@@ -206,9 +242,13 @@ Environment:
 | `IL_PROTECTED`  | Space-separated globs whose change holds the PR (replaces the default). |
 | `IL_CI_TIMEOUT` | Seconds to wait for CI + merge before giving up (default 1800).        |
 | `IL_ONCE`       | Set to run one batch only; otherwise, with no arguments, the loop re-runs after a merged batch while the backlog has anything new. |
+| `IL_KEEP_DAYS`  | Days of per-run files to keep in `.implement-loop/` (default 14, 0 disables pruning). |
 
 Everything the run produces on disk lives in `.implement-loop/` (logs,
-prompts, diffs, verdicts, rulings). The directory is added to
+prompts, diffs, verdicts, rulings, `state.json`). The batch works in a git
+worktree at `.implement-loop/tree`, so the checkout it was started from stays
+on the default branch and is free to use. Per-run files older than
+`IL_KEEP_DAYS` are pruned at startup; `rulings.md` and `state.json` are kept. The directory is added to
 `.git/info/exclude`, so it is ignored without touching `.gitignore` and
 survives the failure path's `git clean -fd`.
 
@@ -223,6 +263,8 @@ survives the failure path's `git clean -fd`.
   every issue in it left open with the link, relabelled `ready-for-human`.
 - Issues that landed with their notes cut: closed like any other, but named
   in the summary's action list with the verdict to read.
+- Range-review findings: one `needs-triage` issue each, linked from the
+  summary.
 - One `loop-report` summary issue whose **first section is the action list**:
   what needs a human, or "Nothing" when everything merged and is closed. The
   issue is closed at once when the list holds nothing to act on.
@@ -239,7 +281,8 @@ Things this does not stop, in rough order of how much they matter:
    only land via the PR.
 2. **The audit is an LLM reading a diff.** It is adversarial by instruction,
    not by construction: a change that is small, plausible, and in the right
-   file reads as part of the feature. It raises the bar; it is not CI.
+   file reads as part of the feature. It reports to a human after the work
+   lands; it blocks nothing.
 3. **The judge is a classifier and can be gamed** — a `</text>` in the issue
    body ends the data block early; a subtle injection reads as prose. Treat
    it as a filter for the obvious, not a wall.

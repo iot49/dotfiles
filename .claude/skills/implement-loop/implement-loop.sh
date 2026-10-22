@@ -11,6 +11,9 @@
 # Usage:
 #   implement-loop.sh [issue numbers...]
 #   No arguments: every open issue labelled ready-for-agent.
+#   implement-loop.sh --resume | --force-new
+#   Continue, or discard, a run that stopped early. A plain run refuses to
+#   start while state.json records one.
 #   implement-loop.sh --status
 #   Whether a run in this checkout is alive, its last steps, its PR and
 #   summary issue. Starts nothing. Run it with the sandbox off: a sandboxed
@@ -142,8 +145,12 @@ if [ -f "$STATE" ]; then
   eval "$(python3 "$SELFDIR/il-state.py" read "$STATE")"
 fi
 
+# An abort here comes before the run has a log of its own, and a launch that
+# sends stdout to /dev/null then shows no log at all, which reads as a launch
+# that never started. So it writes one.
+EARLY_LOG="$WORKDIR/run-$(date +%Y%m%d-%H%M%S).log"
 if [ "$RESUME" = 1 ]; then
-  [ -n "$ST_TS" ] || { echo "ABORT: --resume, but $STATE holds no run to resume" >&2; exit 1; }
+  [ -n "$ST_TS" ] || { echo "ABORT: --resume, but $STATE holds no run to resume" | tee -a "$EARLY_LOG" >&2; exit 1; }
   echo "== resuming $ST_BRANCH (run $ST_TS, stopped in phase ${ST_PHASE:-unknown})"
   TS="$ST_TS"
 elif [ -n "$ST_TS" ] && [ "$FORCE_NEW" = 0 ]; then
@@ -159,7 +166,7 @@ elif [ -n "$ST_TS" ] && [ "$FORCE_NEW" = 0 ]; then
     echo
     echo "  Continue it:  $0 --resume"
     echo "  Discard it:   $0 --force-new"
-  } >&2
+  } | tee -a "$EARLY_LOG" >&2
   exit 1
 else
   TS=$(date +%Y%m%d-%H%M%S)
@@ -825,11 +832,11 @@ for NN in $ORDER; do
     echo "commit a reviewable step referencing #$NN, any mechanical move in its"
     echo "own commit so the rename stays legible."
     echo
-    echo "Do not push. Do not close the issue. If the repo has a scratch/, do"
-    echo "not write into it. Do not modify $WORKDIR/ yourself. Do not touch"
-    echo ".github/, the gate script, the gate:/ci: lines in CLAUDE.md, or"
-    echo "dependency manifests unless the issue explicitly asks — a change"
-    echo "there holds the whole batch for a human."
+    echo "If the repo has a scratch/, do not write into it. Do not modify"
+    echo "$WORKDIR/ yourself. Do not touch .github/, the gate script, the"
+    echo "gate:/ci: lines in CLAUDE.md, or dependency manifests unless the"
+    echo "issue explicitly asks — a change there holds the whole batch for a"
+    echo "human."
 
     # handoff: the blocker that landed (only edges inside this batch)
     for b in $BLK; do
