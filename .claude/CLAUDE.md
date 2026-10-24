@@ -52,6 +52,8 @@ project's own CLAUDE.md.
 - Surgical diffs: touch only what the task needs, match surrounding style,
   leave pre-existing dead code alone.
 - After fixing a bug, add a test that would have caught it.
+- Subagents that only search or read files run at low effort. Only a
+  subagent that reasons over their results gets high effort.
 
 ## Writing
 - Plain English. Short declarative sentences, ordinary words.
