@@ -105,5 +105,6 @@
 },
 "terminal.integrated.mouseWheelScrollSensitivity": 3,
 "terminal.integrated.gpuAcceleration": "off",
-"claudeCode.preferredLocation": "panel"
+"claudeCode.preferredLocation": "panel",
+"editor.accessibilitySupport": "off"
 }
