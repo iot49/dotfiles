@@ -63,6 +63,9 @@ project's own CLAUDE.md.
 - Terse and technical. State the fact and the pointer, nothing else.
 - No intensifiers or emphasis words (loudly, silently, really, exactly,
   crucially); no bold for emphasis.
-- Don't justify a design inside a status line, issue or comment.
-  Rationale goes in an ADR, once.
+- Don't justify a design inside a status line or code comment.
+  A decision gets an ADR only if it is hard to reverse, surprising
+  without context, and the result of a real trade-off. Any other choice
+  keeps its reason in the issue that made it, and the behaviour it
+  produces goes in the doc or docstring that describes the code now.
 - Don't answer objections nobody raised.
