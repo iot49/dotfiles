@@ -46,6 +46,11 @@ project's own CLAUDE.md.
   other secret there.
 - In a plain terminal, `op` uses the desktop app and unlocks with Touch ID.
 
+## Prompts
+- I dictate prompts with Wispr Flow, which mis-transcribes words. If a word
+  or sentence looks wrong, makes no sense, or leaves you unsure, ask before
+  acting on it.
+
 ## Working style
 - Simplicity first: minimum code that does the job. No speculative
   abstractions or error handling for impossible cases.
