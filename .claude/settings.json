@@ -94,12 +94,19 @@
     },
     "filesystem": {
       "allowWrite": [
-        "~/Library/Caches/uv"
+        "~/Library/Caches/uv",
+        "~/.git",
+        "~/rails49",
+        "~/Library/pnpm"
       ]
     },
     "enableWeakerNetworkIsolation": true,
     "excludedCommands": [
-      "mosquitto_sub"
+      "mosquitto_sub",
+      "ssh",
+      "ps",
+      "pgrep",
+      "pkill"
     ]
   },
   "feedbackDrafts": "off",
