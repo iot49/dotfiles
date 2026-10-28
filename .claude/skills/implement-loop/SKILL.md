@@ -64,14 +64,16 @@ written since the launch, so an older run's log cannot answer for this one:
 ```
 for i in $(seq 75); do
   log=$(find .implement-loop -maxdepth 1 -name 'run-*.log' -newer .implement-loop/launch | head -1)
-  [ -n "$log" ] && grep -qE '^(== sandbox:|ABORT)' "$log" && break
+  [ -n "$log" ] && grep -qE '^(== starting|ABORT)' "$log" && break
   sleep 2
 done
 echo "${log:-no log since the launch}"; [ -n "$log" ] && head -20 "$log"
 ```
 
-Started means the lines `== pre-flight`, `== gate:` and
-`== sandbox: <container id>`. An `ABORT` line is a failed launch: report it,
+Started means the lines `== pre-flight`, `== gate:`,
+`== sandbox: <container id>` and `== starting`. The smoke test runs after
+`== sandbox:`, so that line alone does not mean the run started. An `ABORT`
+line is a failed launch: report it,
 with the commands it names. No log means the launch was sandboxed after all.
 
 `implement-loop.sh --status`, run with the sandbox off, answers later
