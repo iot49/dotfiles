@@ -170,6 +170,10 @@ to the phase it stopped in; `--force-new` discards it. Before this, the next
 run force-removed the worktree and implemented the same still-open issues a
 second time. Running out of quota is the usual cause of a stop.
 
+**One run per checkout.** A run writes its pid to `.implement-loop/pid`
+first thing, and a launch aborts while that pid is an implement-loop
+process that is still alive.
+
 **Review findings are filed as `needs-triage`, never `ready-for-agent`.**
 The range review emits one line per finding (file, title, what to change and
 why), and each becomes an issue linked from the summary. `ready-for-agent`

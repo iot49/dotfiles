@@ -92,8 +92,8 @@ set -- $_args
 # Without this, "check the loop" was answered by piecing together the log,
 # state.json and `ps` each time, and once wrongly: a sandboxed shell is denied
 # `kill -0` and `ps`, which read as "exited" for a run that is alive. So a
-# denied `ps` is reported as such. The pid file is written by a run once
-# Docker answers.
+# denied `ps` is reported as such. The pid file is written by a run as soon
+# as it has checked that no other run is alive.
 if [ "$STATUS" = 1 ]; then
   dir="$PWD/.implement-loop"
   pid=$(cat "$dir/pid" 2>/dev/null)
@@ -149,6 +149,21 @@ fi
 # sends stdout to /dev/null then shows no log at all, which reads as a launch
 # that never started. So it writes one.
 EARLY_LOG="$WORKDIR/run-$(date +%Y%m%d-%H%M%S).log"
+
+# One run per checkout. A second launch force-removes the worktree at
+# $WORKDIR/tree, which is the first run's: on 2026-10-28 it deleted the first
+# run's `.venv` mid-gate, and both runs aborted.
+OTHER=$(cat "$WORKDIR/pid" 2>/dev/null)
+if [ -n "$OTHER" ] && [ "$OTHER" != $$ ] \
+   && ps -p "$OTHER" -o command= 2>/dev/null | grep -q implement-loop; then
+  {
+    echo "ABORT: another run is alive in this checkout: pid $OTHER."
+    echo "  Follow it:  $0 --status"
+  } | tee -a "$EARLY_LOG" >&2
+  exit 1
+fi
+echo $$ > "$WORKDIR/pid"   # read by --status and by the check above
+
 if [ "$RESUME" = 1 ]; then
   [ -n "$ST_TS" ] || { echo "ABORT: --resume, but $STATE holds no run to resume" | tee -a "$EARLY_LOG" >&2; exit 1; }
   echo "== resuming $ST_BRANCH (run $ST_TS, stopped in phase ${ST_PHASE:-unknown})"
@@ -218,7 +233,6 @@ if ! DOCKER_ERR=$(docker version --format '{{.Server.Version}}' 2>&1); then
   } | tee -a "$LOG" >&2
   exit 1
 fi
-echo $$ > "$WORKDIR/pid"   # read by --status
 
 exec > >(tee -a "$LOG") 2>&1
 

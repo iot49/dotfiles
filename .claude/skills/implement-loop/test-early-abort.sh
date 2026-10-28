@@ -6,9 +6,9 @@ set -u
 SELF=$(cd "$(dirname "$0")" && pwd)
 fail=0
 
-check() { # check <name> — expect a logged ABORT in the current dir
-  local name=$1
-  if grep -qs '^ABORT' "$PWD"/.implement-loop/run-*.log; then
+check() { # check <name> [pattern] — expect a logged ABORT in the current dir
+  local name=$1 pattern=${2:-}
+  if grep -qs "^ABORT: $pattern" "$PWD"/.implement-loop/run-*.log; then
     echo "ok   $name"
   else
     echo "FAIL $name: no run-*.log with an ABORT line"; fail=1
@@ -25,5 +25,14 @@ check "plain run over an unfinished one"
 d=$(mktemp -d "${TMPDIR:-/tmp}/il-test.XXXXXX"); cd "$d" || exit 1
 bash "$SELF/implement-loop.sh" --resume > /dev/null 2>&1
 check "--resume with nothing to resume"
+
+# Needs `ps`, so the sandbox off.
+d=$(mktemp -d "${TMPDIR:-/tmp}/il-test.XXXXXX"); cd "$d" || exit 1
+mkdir .implement-loop
+bash -c 'sleep 30; : implement-loop' & other=$!
+echo "$other" > .implement-loop/pid
+bash "$SELF/implement-loop.sh" > /dev/null 2>&1
+check "a second run while one is alive" "another run is alive"
+kill "$other"
 
 exit $fail
