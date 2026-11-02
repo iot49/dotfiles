@@ -27,6 +27,9 @@ project's own CLAUDE.md.
   matches nothing is an error. Quote globs.
 - Sandboxed and unsandboxed commands see different `$TMPDIR`s. Write logs of
   unsandboxed commands to the scratchpad directory.
+- The sandbox blocks Chromium's Mach port check-in. Drive a browser with
+  `uv run --with playwright python -I <absolute script path>`, with no `cd`,
+  pipe or chain in the call: that form runs outside the sandbox.
 
 ## Secrets
 - `~` is a public git repo. Never put a secret in a config file, `.env`, or

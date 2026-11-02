@@ -106,7 +106,8 @@
       "ssh",
       "ps",
       "pgrep",
-      "pkill"
+      "pkill",
+      "uv run --with playwright *"
     ]
   },
   "feedbackDrafts": "off",
