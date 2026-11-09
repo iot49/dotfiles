@@ -30,6 +30,15 @@ project's own CLAUDE.md.
 - The sandbox blocks Chromium's Mach port check-in. Drive a browser with
   `uv run --with playwright python -I <absolute script path>`, with no `cd`,
   pipe or chain in the call: that form runs outside the sandbox.
+- `ps`, `pgrep` and `pkill` run outside the sandbox only as the whole
+  command. Inside a pipe, chain or loop they fail with "Cannot get process
+  list", so a wait loop built on them returns at once.
+- Never detach a process with `( cmd & )`, `nohup` or `disown`: nothing can
+  stop it when the call times out. Background with `cmd &` and `wait` in the
+  same call, and run one test suite at a time.
+- Never `git worktree remove --force` while a process may still run in the
+  tree. On 2026-11-09 four detached vitest runs in a removed worktree filled
+  109 GB and the Mac had to be power-cycled.
 
 ## Secrets
 - `~` is a public git repo. Never put a secret in a config file, `.env`, or
