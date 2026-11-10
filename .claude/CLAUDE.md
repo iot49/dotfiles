@@ -88,4 +88,11 @@ project's own CLAUDE.md.
   without context, and the result of a real trade-off. Any other choice
   keeps its reason in the issue that made it, and the behaviour it
   produces goes in the doc or docstring that describes the code now.
+- Write an ADR after its decision has run, not before. Until then the
+  decision stays in the issue and can change.
+- A change that would amend or supersede an ADR under a month old gets no
+  new ADR. The old one gets a superseded line naming the issue, and the new
+  behaviour goes in the doc that describes it.
+- An ADR holds the decision and why. Numbers, names and field lists go in
+  the spec or contract doc.
 - Don't answer objections nobody raised.
