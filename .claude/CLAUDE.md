@@ -35,7 +35,10 @@ project's own CLAUDE.md.
   list", so a wait loop built on them returns at once.
 - Never detach a process with `( cmd & )`, `nohup` or `disown`: nothing can
   stop it when the call times out. Background with `cmd &` and `wait` in the
-  same call, and run one test suite at a time.
+  same call, and run one test suite at a time. The exception is
+  `/implement-loop`, which launches with `nohup` on purpose so the batch
+  survives a closed terminal; stop it with `implement-loop.sh --status` and
+  `kill <pid>`.
 - Never `git worktree remove --force` while a process may still run in the
   tree. On 2026-11-09 four detached vitest runs in a removed worktree filled
   109 GB and the Mac had to be power-cycled.
