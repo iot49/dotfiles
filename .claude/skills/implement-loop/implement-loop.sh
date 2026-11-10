@@ -566,6 +566,11 @@ sys.exit(0 if "check" in json.load(open("package.json")).get("scripts", {}) else
 }
 
 run_gate() { # -> exit code is the verdict; output captured to $1
+  # The agent's container shares this tree, and a pnpm install there keeps
+  # only Linux's native packages. This host's install then reports "Already
+  # up to date", or asks to reinstall and, with no terminal, exits. With no
+  # node_modules the gate's own install starts from scratch.
+  [ -f pnpm-lock.yaml ] && find . -name node_modules -type d -prune -exec rm -rf {} +
   bash -c "$GATE" > "$1" 2>&1
 }
 
