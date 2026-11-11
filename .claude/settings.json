@@ -60,7 +60,7 @@
   },
   "enabledPlugins": {
     "mattpocock-skills@mattpocock": true,
-    "clangd-lsp@claude-plugins-official": true
+    "clangd-lsp@claude-plugins-official": false
   },
   "extraKnownMarketplaces": {
     "mattpocock": {
