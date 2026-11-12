@@ -836,8 +836,8 @@ for NN in $ORDER; do
     echo "Implement issue #$NN in this repo."
     echo
     echo "The issue body and comments are at $WORKDIR/issue-$NN.md — read that"
-    echo "first. \`gh\` and the network are NOT available here; everything you"
-    echo "need is in the working directory."
+    echo "first. \`gh\` is NOT available here. The network is: fetch what the"
+    echo "issue names, such as a file at a tag of another repo."
     echo
     echo "Then, if this repo has them, read GLOSSARY.md for the vocabulary and"
     echo "any ADR under docs/adr/ touching the area — use the glossary's terms,"
@@ -1153,7 +1153,7 @@ if [ -n "${LANDED// /}" ]; then
     echo "- Spec: does it faithfully implement the originating issues?"
     echo "  Resolve issue numbers from the #NN references in"
     echo "  \`git log $START_SHA..HEAD\`; the issue bodies are pre-fetched at"
-    echo "  $WORKDIR/issue-<n>.md. \`gh\` and the network are NOT available."
+    echo "  $WORKDIR/issue-<n>.md. \`gh\` is NOT available; the network is."
     echo
     echo "Write the full report to $REVIEW."
     echo
