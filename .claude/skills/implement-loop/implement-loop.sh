@@ -280,6 +280,9 @@ skip_count() { # skip_count <gate output file>
   [ -f "$1" ] || { echo unknown; return; }
   s=$(grep -oE '[0-9]+ skipped' "$1" | tail -1 | awk '{print $1}')
   d=$(grep -oE '[0-9]+ deselected' "$1" | tail -1 | awk '{print $1}')
+  # vitest names `skipped` in its `Tests  260 passed (260)` line only when
+  # some were
+  [ -z "$s" ] && grep -qE '^ *Tests +.*\([0-9]+\)' "$1" && s=0
   # neither field present: the gate said nothing about tests that did not run,
   # which is not the same as none of them having done so
   [ -z "$s" ] && [ -z "$d" ] && { echo unknown; return; }
